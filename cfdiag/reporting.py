@@ -2,6 +2,7 @@ import re
 import json
 import os
 import threading
+import urllib.request
 from typing import Dict, Any, Optional, List
 from .utils import Colors, SEPARATOR, SUB_SEPARATOR, console_lock, thread_local
 
@@ -107,11 +108,9 @@ class FileLogger:
         lines.append(f"# cfdiag Report: {domain}")
         lines.append(f"**Date:** {ts}")
         lines.append("")
-        
         lines.append("## Diagnostic Summary")
         lines.append("| Check | Status |")
         lines.append("|---|---|")
-        
         summary = self.html_data.get("summary", [])
         if isinstance(summary, list):
             for line in summary:
@@ -119,7 +118,6 @@ class FileLogger:
                     k, v = line.split(":", 1)
                     icon = "✅" if "PASS" in v or "OK" in v or "SUCCESS" in v else ("❌" if "FAIL" in v else "⚠️")
                     lines.append(f"| {k.strip()} | {icon} {v.strip()} |")
-        
         lines.append("")
         lines.append("## Detailed Steps")
         steps = self.html_data.get("steps", [])
@@ -136,7 +134,6 @@ class FileLogger:
                     lines.append(details)
                     lines.append("```")
                     lines.append("")
-        
         try:
             with open(filename, 'w') as f: f.write("\n".join(lines))
             return True
@@ -145,14 +142,11 @@ class FileLogger:
     def save_junit(self, filename: str) -> bool:
         domain = self.html_data.get('domain', '')
         steps = self.html_data.get("steps", [])
-        
         xml = []
         xml.append('<?xml version="1.0" encoding="UTF-8"?>')
-        
         failures = 0
         tests = 0
         testcases = []
-        
         if isinstance(steps, list):
             for step in steps:
                 if isinstance(step, dict):
@@ -160,22 +154,39 @@ class FileLogger:
                     status = step.get('status', 'INFO')
                     title = step.get('title', '')
                     details = step.get('details', '').replace("<", "&lt;").replace(">", "&gt;")
-                    
-                    case = f'<testcase name="{title}" classname="cfdiag.{domain}">' 
+                    case = f'<testcase name="{title}" classname="cfdiag.{domain}">'
                     if status == "FAIL":
                         failures += 1
                         case += f'<failure message="{status}">{details}</failure>'
                     case += '</testcase>'
                     testcases.append(case)
-        
         xml.append(f'<testsuites><testsuite name="cfdiag" tests="{tests}" failures="{failures}">')
         xml.extend(testcases)
         xml.append('</testsuite></testsuites>')
-        
         try:
             with open(filename, 'w') as f: f.write("\n".join(xml))
             return True
         except: return False
+
+def send_webhook(url: str, domain: str, result_dict: Dict[str, Any]) -> None:
+    # Feature: Webhook Notification
+    try:
+        # Construct simple payload
+        dns = result_dict.get('dns', 'Unknown')
+        http = result_dict.get('http', 'Unknown')
+        
+        payload = {
+            "text": f"✅ cfdiag scan finished for *{domain}*.\nDNS: {dns}\nHTTP: {http}"
+        }
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                print(f"{Colors.OKGREEN}Webhook sent successfully.{Colors.ENDC}")
+            else:
+                print(f"{Colors.FAIL}Webhook failed: {resp.status}{Colors.ENDC}")
+    except Exception as e:
+        print(f"{Colors.FAIL}Webhook error: {e}{Colors.ENDC}")
 
 def print_header(title: str) -> None:
     l = get_logger()

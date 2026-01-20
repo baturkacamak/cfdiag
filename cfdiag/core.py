@@ -3,12 +3,13 @@ import datetime
 import time
 import os
 import concurrent.futures
+import sys
 from typing import Dict, Any, Optional
 from .utils import VERSION, get_context, set_context, console_lock, Colors
 from .reporting import (
     FileLogger, set_logger, get_logger, 
     save_history, save_metrics, print_header, 
-    compare_reports, SEPARATOR
+    compare_reports, send_webhook, SEPARATOR
 )
 from .network import (
     check_internet_connection, check_dependencies,
@@ -38,7 +39,6 @@ def load_config(profile_name: Optional[str] = None) -> Dict[str, Any]:
 def self_update() -> None:
     import urllib.request
     import re
-    import sys
     from .utils import REPO_URL
     
     print(f"Checking for updates (Current: {VERSION})...")
@@ -156,6 +156,8 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     if l:
         l.html_data['domain'] = domain
         l.html_data['timestamp'] = timestamp
+        # In Watch Mode, we might want to suppress the "DIAGNOSING" header every 5s if we want a cleaner dashboard
+        # But we clear the screen anyway.
         l.log_console(f"\n{Colors.BOLD}{Colors.HEADER}DIAGNOSING: {domain}{Colors.ENDC}", force=True)
         l.log_file(f"# DIAGNOSIS: {domain}\nDate: {timestamp}", force=True)
 
@@ -229,9 +231,9 @@ _cfdiag()
 {
     local cur prev opts
     COMPREPLY=()
-    cur=\"${COMP_WORDS[COMP_CWORD]}\"
+    cur=\"${COMP_WORDS[COMP_CWORD]}\" 
     prev=\"${COMP_WORDS[COMP_CWORD-1]}\" 
-    opts=\"--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion --grafana --keylog\"
+    opts=\"--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion --grafana --keylog --watch --notify\"
 
     if [[ ${cur} == -* ]] ; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -265,6 +267,8 @@ _cfdiag() {
         '--completion[Generate shell completion]:(bash zsh)'
         '--grafana[Generate Grafana Dashboard JSON]'
         '--keylog[SSL Keylog file]:filename:_files'
+        '--watch[Run continuously every 5 seconds]'
+        '--notify[Webhook URL for notifications]:url'
     )
     _arguments "${args[@]}"
 }
@@ -301,6 +305,8 @@ def main() -> None:
     parser.add_argument("--timeout", type=int, default=10, help="Connection timeout in seconds")
     parser.add_argument("--markdown", action="store_true", help="Generate Markdown Report")
     parser.add_argument("--junit", action="store_true", help="Generate JUnit XML Report")
+    parser.add_argument("--watch", action="store_true", help="Run continuously (every 5s)")
+    parser.add_argument("--notify", help="Webhook URL for notification on completion")
     
     args = parser.parse_args()
     
@@ -327,7 +333,7 @@ def main() -> None:
         'headers': args.header,
         'timeout': args.timeout
     }
-    
+
     if args.file:
         if not os.path.exists(args.file):
             print(f"File not found: {args.file}")
@@ -339,7 +345,7 @@ def main() -> None:
             
         print(f"\n{Colors.BOLD}{Colors.HEADER}=== BATCH MODE STARTED ({len(domains)} domains, {args.threads} threads) ==={Colors.ENDC}\n")
         dns_header = "PROPAGATION" if args.expect else "DNS"
-        print(f"{'DOMAIN':<30} | {dns_header:<12} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
+        print(f"{'.'.ljust(30)} | {dns_header:<12} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
         print("-" * 85)
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
@@ -354,6 +360,10 @@ def main() -> None:
                         print(f"Error processing {futures[future]}: {e}")
 
         print(f"\n{Colors.OKGREEN}Batch Complete. Detailed reports in reports/{Colors.ENDC}")
+        
+        if args.notify:
+            # Aggregate stats for notification
+            send_webhook(args.notify, f"Batch ({len(domains)} domains)", {"dns": "DONE", "http": "DONE"})
 
     else:
         silent = True if args.json else False
@@ -361,12 +371,40 @@ def main() -> None:
         set_logger(l)
         set_context(ctx)
         
-        result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics)
-        
-        if args.json:
-            print(json.dumps(result, indent=4))
+        if args.watch:
+            try:
+                while True:
+                    os.system('cls' if os.name == 'nt' else 'clear')
+                    print(f"{Colors.BOLD}--- Watch Mode (Ctrl+C to stop) ---{Colors.ENDC}")
+                    # Re-init logger logic if needed, but instance persists.
+                    # Actually, we might want new html_data every time?
+                    # Or just run it.
+                    # run_diagnostics re-initializes html_data if we set l again?
+                    # No, l.html_data is in __init__.
+                    # We should reset l for every run to clear previous steps.
+                    l = FileLogger(verbose=args.verbose, silent=silent)
+                    set_logger(l)
+                    
+                    result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics)
+                    time.sleep(5)
+            except KeyboardInterrupt:
+                print("\nStopped.")
+                sys.exit(0)
         else:
-            if not args.verbose: print(f"\n{Colors.OKBLUE}📄 Reports saved to reports/{domain}/ folder.{Colors.ENDC}")
+            result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics)
+            
+            if args.markdown:
+                l.save_markdown(os.path.join("reports", domain, f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.md"))
+            if args.junit:
+                l.save_junit(os.path.join("reports", domain, "junit.xml"))
+
+            if args.json:
+                print(json.dumps(result, indent=4))
+            else:
+                if not args.verbose: print(f"\n{Colors.OKBLUE}📄 Reports saved to reports/{domain}/ folder.{Colors.ENDC}")
+            
+            if args.notify:
+                send_webhook(args.notify, domain, result)
 
 if __name__ == "__main__":
     main()

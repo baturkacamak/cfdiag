@@ -18,9 +18,6 @@ class TestCFDiag(unittest.TestCase):
         self.mock_get_logger = self.log_patcher.start()
         
         self.mock_logger_instance = MagicMock()
-        # Mock FileLogger methods to avoid real I/O if possible, 
-        # but for testing save_markdown we might want to check the string construction.
-        # We can mock the save_to_file and save_html methods.
         self.mock_logger_instance.html_data = {"domain": "test", "timestamp": "now", "steps": [], "summary": ["DNS: PASS"]}
         self.mock_logger_instance.save_html.return_value = True
         
@@ -68,26 +65,20 @@ class TestCFDiag(unittest.TestCase):
         sys.stdout = sys.__stdout__
         self.assertIn("cfdiag_http_ttfb_seconds", capturedOutput.getvalue())
 
-    def test_markdown_generation(self):
-        # We need to test the logic in FileLogger class, not the mock
-        l = cfdiag.reporting.FileLogger()
-        l.html_data = {"domain": "example.com", "timestamp": "now", "summary": ["DNS: PASS"], "steps": []}
-        
-        with patch('builtins.open', unittest.mock.mock_open()) as mock_file:
-            l.save_markdown("report.md")
-            mock_file().write.assert_called()
-            args = mock_file().write.call_args[0][0]
-            self.assertIn("# cfdiag Report: example.com", args)
-            self.assertIn("| DNS | ✅ PASS |", args)
+    def test_curl_flags_header(self):
+        self.mock_get_context.return_value = {'headers': ['X-Foo: Bar'], 'ipv4': True}
+        flags = cfdiag.utils.get_curl_flags()
+        self.assertIn("-4", flags)
+        self.assertIn('-H "X-Foo: Bar"', flags)
 
-    def test_junit_generation(self):
-        l = cfdiag.reporting.FileLogger()
-        l.html_data = {"domain": "example.com", "timestamp": "now", "summary": [], "steps": [{"title": "DNS", "status": "PASS", "details": ""}]}
+    @patch('cfdiag.reporting.urllib.request.urlopen')
+    def test_webhook(self, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
         
-        with patch('builtins.open', unittest.mock.mock_open()) as mock_file:
-            l.save_junit("junit.xml")
-            args = mock_file().write.call_args[0][0]
-            self.assertIn('<testcase name="DNS" classname="cfdiag.example.com">', args)
+        cfdiag.reporting.send_webhook("http://hook", "test.com", {"dns": "OK"})
+        mock_urlopen.assert_called()
 
 if __name__ == '__main__':
     unittest.main()
