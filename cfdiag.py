@@ -9,9 +9,14 @@ It orchestrates native system tools and Python libraries to gather
 diagnostics and presents a structured, actionable summary.
 
 Usage:
-    python3 cfdiag.py <domain> [--origin <ip>] [--profile <name>] [--metrics]
-    python3 cfdiag.py --file domains.txt [--threads 5]
-    python3 cfdiag.py --diff report1.txt report2.txt
+    python3 cfdiag.py <domain> [options]
+    python3 cfdiag.py --file domains.txt [options]
+
+Options:
+    --ipv4          Force IPv4
+    --ipv6          Force IPv6
+    --proxy URL     Use HTTP/HTTPS Proxy
+    --json          Output JSON to stdout (Planned)
 
 Author: Gemini Agent
 """
@@ -37,7 +42,7 @@ from typing import List, Tuple, Dict, Optional, Any, Union
 
 # --- Configuration & Constants ---
 
-VERSION = "2.9.0"
+VERSION = "2.10.0"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -70,6 +75,9 @@ USER_AGENTS = {
 
 # Thread Lock for Console Output
 console_lock = threading.Lock()
+
+# Global Context for Args (set in main/wrapper)
+context_args = threading.local()
 
 # Colors (ANSI escape codes)
 class Colors:
@@ -193,7 +201,7 @@ class FileLogger:
             return True
         except: return False
 
-# Thread-Local Logger
+# Thread-Local Logger & Context
 thread_local = threading.local()
 
 def get_logger() -> Optional[FileLogger]:
@@ -202,7 +210,21 @@ def get_logger() -> Optional[FileLogger]:
 def set_logger(log_obj: FileLogger) -> None:
     thread_local.logger = log_obj
 
+def get_context() -> Dict[str, Any]:
+    return getattr(thread_local, 'context', {})
+
+def set_context(ctx: Dict[str, Any]) -> None:
+    thread_local.context = ctx
+
 # --- Helper Functions ---
+
+def get_curl_flags() -> str:
+    ctx = get_context()
+    flags = []
+    if ctx.get('ipv4'): flags.append("-4")
+    if ctx.get('ipv6'): flags.append("-6")
+    if ctx.get('proxy'): flags.append(f"--proxy {ctx.get('proxy')}")
+    return " " + " ".join(flags) if flags else ""
 
 def print_header(title: str) -> None:
     l = get_logger()
@@ -351,18 +373,13 @@ def save_metrics(domain: str, metrics: Dict[str, Any]):
     except: pass
 
 def compare_reports(file1: str, file2: str) -> None:
-    # Feature: Report Diffing
     print(f"\n{Colors.BOLD}COMPARING REPORTS:{Colors.ENDC}")
     print(f"A: {file1}")
     print(f"B: {file2}\n")
-    
     try:
         with open(file1, 'r') as f1, open(file2, 'r') as f2:
             lines1 = f1.readlines()
             lines2 = f2.readlines()
-            
-        # Very simple diff: Look for PASS/FAIL changes
-        # Extract Summary lines
         def extract_summary(lines):
             summary = {}
             in_summary = False
@@ -377,26 +394,20 @@ def compare_reports(file1: str, file2: str) -> None:
                         status = parts[0].replace('[', '')
                         summary[key] = status
             return summary
-
         s1 = extract_summary(lines1)
         s2 = extract_summary(lines2)
-        
         all_keys = set(s1.keys()) | set(s2.keys())
         changes = 0
-        
         for k in all_keys:
             v1 = s1.get(k, "N/A")
             v2 = s2.get(k, "N/A")
-            
             if v1 != v2:
                 print(f"{Colors.BOLD}{k}{Colors.ENDC}")
                 print(f"  Old: {Colors.FAIL if 'FAIL' in v1 else Colors.OKGREEN}{v1}{Colors.ENDC}")
                 print(f"  New: {Colors.FAIL if 'FAIL' in v2 else Colors.OKGREEN}{v2}{Colors.ENDC}")
                 changes += 1
-        
         if changes == 0:
             print(f"{Colors.OKGREEN}No changes in summary status detected.{Colors.ENDC}")
-            
     except Exception as e:
         print(f"Error comparing files: {e}")
 
@@ -407,10 +418,16 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
     ips: List[str] = []
     ipv4: List[str] = []
     ipv6: List[str] = []
-    print_cmd(f"socket.getaddrinfo('{domain}', 443)")
+    
+    ctx = get_context()
+    family = socket.AF_UNSPEC
+    if ctx.get('ipv4'): family = socket.AF_INET
+    if ctx.get('ipv6'): family = socket.AF_INET6
+    
+    print_cmd(f"socket.getaddrinfo('{domain}', 443, family={family})")
     l = get_logger()
     try:
-        info = socket.getaddrinfo(domain, 443, proto=socket.IPPROTO_TCP)
+        info = socket.getaddrinfo(domain, 443, family=family, proto=socket.IPPROTO_TCP)
         for _, _, _, _, sockaddr in info:
             ip = sockaddr[0]
             if ip not in ips:
@@ -420,29 +437,33 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
         if l: l.log_file(f"Output:\n    IPv4: {ipv4}\n    IPv6: {ipv6}")
         
         if ipv4: print_success(f"IPv4 Resolved: {Colors.WHITE}{', '.join(ipv4)}{Colors.ENDC}")
-        else: print_warning("No IPv4 records found.")
+        else: 
+            if ctx.get('ipv6'): pass
+            else: print_warning("No IPv4 records found.")
+            
         if ipv6: print_success(f"IPv6 Resolved: {Colors.WHITE}{', '.join(ipv6)}{Colors.ENDC}")
-        else: print_info("No IPv6 records found.")
+        else: 
+            if ctx.get('ipv4'): pass
+            else: print_info("No IPv6 records found.")
         
         if not ips:
             print_fail("DNS returned empty result.")
             return False, [], []
 
-        # ASN Check via DNS (Feature: Offline Mode)
-        # Query origin.asn.cymru.com
-        target_ip = ipv4[0] if ipv4 else None
-        if target_ip and not target_ip.startswith(("192.168.", "10.", "127.")):
-            rev_ip = '.'.join(reversed(target_ip.split('.')))
-            cmd = f"dig +short -t TXT {rev_ip}.origin.asn.cymru.com"
-            c, out = run_command(cmd, show_output=False, log_output_to_file=True)
-            if c == 0 and out.strip():
-                # Output: "12345 | 1.2.3.0/24 | US | arin | ..."
-                parts = out.replace('"', '').split('|')
-                if len(parts) >= 3:
-                    asn = parts[0].strip()
-                    country = parts[2].strip()
-                    print_success(f"ASN Info: {Colors.WHITE}AS{asn} ({country}){Colors.ENDC}")
-                    if l: l.log_file(f"ASN: AS{asn}, {country}")
+        # ASN Check via DNS
+        target_ip = ipv4[0] if ipv4 else (ipv6[0] if ipv6 else None)
+        if target_ip and not target_ip.startswith(("192.168.", "10.", "127.", "::1")):
+            if '.' in target_ip:
+                rev_ip = '.'.join(reversed(target_ip.split('.')))
+                cmd = f"dig +short -t TXT {rev_ip}.origin.asn.cymru.com"
+                c, out = run_command(cmd, show_output=False, log_output_to_file=True)
+                if c == 0 and out.strip():
+                    parts = out.replace('"', '').split('|')
+                    if len(parts) >= 3:
+                        asn = parts[0].strip()
+                        country = parts[2].strip()
+                        print_success(f"ASN Info: {Colors.WHITE}AS{asn} ({country}){Colors.ENDC}")
+                        if l: l.log_file(f"ASN: AS{asn}, {country}")
             
         if l: l.add_html_step("DNS", "PASS" if ips else "FAIL", f"IPv4: {ipv4}\nIPv6: {ipv6}")
         return True, ipv4, ipv6
@@ -476,7 +497,13 @@ def step_blacklist(domain: str, ip: str) -> None:
 def step_dns_trace(domain: str) -> None:
     print_subheader("3. Recursive DNS Trace")
     if not shutil.which("dig"): return
-    c, out = run_command(f"dig +trace {domain}", timeout=15, log_output_to_file=True)
+    
+    ctx = get_context()
+    flags = ""
+    if ctx.get('ipv4'): flags += " -4"
+    if ctx.get('ipv6'): flags += " -6"
+    
+    c, out = run_command(f"dig +trace{flags} {domain}", timeout=15, log_output_to_file=True)
     status = "PASS" if c==0 and "NOERROR" in out else "WARN"
     l = get_logger()
     if l: l.add_html_step("DNS Trace", status, out)
@@ -517,7 +544,8 @@ def step_dnssec(domain: str) -> Optional[str]:
 
 def step_domain_status(domain: str) -> None:
     print_subheader("6. Domain Registration Status (RDAP)")
-    code, output = run_command(f"curl -s --connect-timeout 5 https://rdap.org/domain/{domain}", show_output=False)
+    flags = get_curl_flags()
+    code, output = run_command(f"curl{flags} -s --connect-timeout 5 https://rdap.org/domain/{domain}", show_output=False)
     detail = ""
     if code == 0:
         try:
@@ -538,8 +566,10 @@ def step_domain_status(domain: str) -> None:
 def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     print_subheader("7. HTTP/HTTPS Availability")
     fmt = "code=%{http_code};;connect=%{time_connect};;start=%{time_starttransfer};;total=%{time_total}"
-    cmd = f"curl -I -w \"{fmt}\" --connect-timeout 10 https://{domain}"
+    flags = get_curl_flags()
+    cmd = f"curl{flags} -I -w \"{fmt}\" --connect-timeout 10 https://{domain}"
     print_cmd(cmd)
+    
     code, output = run_command(cmd, log_output_to_file=True)
     
     status = 0
@@ -581,6 +611,7 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
         print_info(f"Latency: Connect={conn_ms}ms, TTFB={ttfb_ms}ms")
 
     step_cache_headers(output)
+    
     return ("SUCCESS" if 200<=status<400 else "FAIL"), status, False, metrics
 
 def step_cache_headers(http_output: str) -> None:
@@ -604,7 +635,8 @@ def step_cache_headers(http_output: str) -> None:
 
 def step_security_headers(domain: str) -> None:
     print_subheader("7.5. Security Header Audit")
-    cmd = f"curl -I --connect-timeout 5 https://{domain}"
+    flags = get_curl_flags()
+    cmd = f"curl{flags} -I --connect-timeout 5 https://{domain}"
     code, output = run_command(cmd, show_output=False, log_output_to_file=True)
     
     headers = {}
@@ -643,7 +675,7 @@ def step_security_headers(domain: str) -> None:
                 print_success("HSTS: Ready for Preload.")
     
     if shutil.which("curl"):
-        c2, out2 = run_command(f"curl -s https://hstspreload.org/api/v2/status?domain={domain}", show_output=False)
+        c2, out2 = run_command(f"curl{flags} -s https://hstspreload.org/api/v2/status?domain={domain}", show_output=False)
         if c2 == 0:
             if "\"status\": \"preloaded\"" in out2: print_success("HSTS Preload Status: Preloaded")
             elif "\"status\": \"pending\"" in out2: print_info("HSTS Preload Status: Pending")
@@ -710,13 +742,23 @@ def step_mtu(domain: str) -> bool:
 def step_traceroute(domain: str) -> None:
     print_subheader("12. Traceroute")
     cmd = f"tracert -h 15 {domain}" if os.name == 'nt' else f"traceroute -m 15 -w 2 {domain}"
+    
+    ctx = get_context()
+    flags = ""
+    if ctx.get('ipv4'): flags = " -4"
+    if ctx.get('ipv6'): flags = " -6"
+    
+    if "traceroute" in cmd:
+        cmd = cmd.replace("traceroute", f"traceroute{flags}")
+    
     c, out = run_command(cmd, timeout=60, log_output_to_file=True)
     l = get_logger()
     if l: l.add_html_step("Traceroute", "INFO", out)
 
 def step_cf_trace(domain: str) -> Tuple[bool, Dict[str, str]]:
     print_subheader("13. CF Trace")
-    c, out = run_command(f"curl -s --connect-timeout 5 https://{domain}/cdn-cgi/trace", log_output_to_file=True)
+    flags = get_curl_flags()
+    c, out = run_command(f"curl{flags} -s --connect-timeout 5 https://{domain}/cdn-cgi/trace", log_output_to_file=True)
     if c == 0 and "colo=" in out:
         d = dict(l.split('=', 1) for l in out.splitlines() if '=' in l)
         print_success(f"Edge: {Colors.WHITE}{d.get('colo')} / {d.get('ip')}{Colors.ENDC}")
@@ -740,10 +782,11 @@ def step_redirects(domain: str) -> None:
     print_subheader("17. Redirect Chain Analysis")
     current_url = f"http://{domain}"
     hops = []
+    flags = get_curl_flags()
     
     for i in range(5): 
         hops.append(current_url)
-        cmd = f'curl -I -s -w "%{{redirect_url}}" -o /dev/null {current_url}'
+        cmd = f'curl{flags} -I -s -w "%{{redirect_url}}" -o /dev/null {current_url}'
         c, next_url = run_command(cmd, show_output=False, log_output_to_file=True)
         if c == 0 and next_url.strip():
             print_info(f"Hop {i+1}: {current_url} -> {next_url}")
@@ -759,8 +802,9 @@ def step_waf_evasion(domain: str) -> None:
     print_subheader("18. WAF / User-Agent Test")
     blocked = []
     allowed = []
+    flags = get_curl_flags()
     for name, ua in USER_AGENTS.items():
-        cmd = f'curl -I -s -o /dev/null -w "%{{http_code}}" -H "User-Agent: {ua}" https://{domain}'
+        cmd = f'curl{flags} -I -s -o /dev/null -w "%{{http_code}}" -H "User-Agent: {ua}" https://{domain}'
         c, code_str = run_command(cmd, show_output=False, log_output_to_file=True)
         try:
             code = int(code_str)
@@ -862,8 +906,6 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
     l.log_console(f"\n{Colors.GREY}{SEPARATOR}{Colors.ENDC}", force=True)
     l.log_file(f"\n{SEPARATOR}")
 
-# --- Orchestrator ---
-
 def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False) -> Dict[str, Any]:
     reports_dir = "reports"
     domain_dir = os.path.join(reports_dir, domain)
@@ -928,10 +970,15 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
         "log": log_file
     }
 
-def run_diagnostics_wrapper(domain: str, origin: Optional[str], expect: Optional[str], metrics: bool, verbose: bool, silent: bool) -> Dict[str, Any]:
+def run_diagnostics_wrapper(domain: str, origin: Optional[str], expect: Optional[str], metrics: bool, verbose: bool, silent: bool, context: Dict[str, Any]) -> Dict[str, Any]:
     l = FileLogger(verbose=verbose, silent=silent)
     set_logger(l)
+    set_context(context)
     return run_diagnostics(domain, origin, expect, metrics)
+
+def run_diagnostics_impl(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False) -> Dict[str, Any]:
+    # Alias for run_diagnostics
+    return run_diagnostics(domain, origin_ip, expected_ns, export_metrics)
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -942,11 +989,17 @@ def main() -> None:
     parser.add_argument("--file")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--no-color", action="store_true")
-    parser.add_argument("--diff", nargs=2, help="Compare two report files")
+    parser.add_argument("--diff", nargs=2)
     parser.add_argument("--version", action="version", version=f"cfdiag {VERSION}")
     parser.add_argument("--update", action="store_true")
     parser.add_argument("--metrics", action="store_true")
     parser.add_argument("--threads", type=int, default=5)
+    
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--ipv4", action="store_true", help="Force IPv4")
+    group.add_argument("--ipv6", action="store_true", help="Force IPv6")
+    parser.add_argument("--proxy", help="Use HTTP Proxy (e.g. http://1.2.3.4:8080)")
+    
     args = parser.parse_args()
     
     if args.update: self_update(); return
@@ -961,18 +1014,15 @@ def main() -> None:
     if not domain and not args.file: parser.print_help(); sys.exit(1)
     if not check_internet_connection(): print("No Internet."); sys.exit(1)
     check_dependencies()
+    
+    # Global context for flags
+    ctx = {
+        'ipv4': args.ipv4,
+        'ipv6': args.ipv6,
+        'proxy': args.proxy
+    }
 
     if args.file:
-        with open(args.file, 'r') as f:
-            for line in f:
-                d = line.strip()
-                if d:
-                    # ThreadPoolExecutor is used here, calling run_diagnostics_wrapper
-                    # ... implementation same as before ...
-                    # Reusing logic for brevity in this replace
-                    pass
-        # (Shortened for replace context matching if needed, but I'm rewriting the whole file so I should include it)
-        # Re-adding batch logic:
         if not os.path.exists(args.file):
             print(f"File not found: {args.file}")
             sys.exit(1)
@@ -987,7 +1037,7 @@ def main() -> None:
         print("-" * 85)
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
-            futures = {executor.submit(run_diagnostics_wrapper, d, origin, expect, args.metrics, False, True): d for d in domains}
+            futures = {executor.submit(run_diagnostics_wrapper, d, origin, expect, args.metrics, False, True, ctx): d for d in domains}
             for future in concurrent.futures.as_completed(futures):
                 try:
                     res = future.result()
@@ -1002,6 +1052,7 @@ def main() -> None:
     else:
         l = FileLogger(verbose=args.verbose, silent=False)
         set_logger(l)
+        set_context(ctx)
         run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics)
         if not args.verbose: print(f"\n{Colors.OKBLUE}📄 Reports saved to reports/{domain}/ folder.{Colors.ENDC}")
 
