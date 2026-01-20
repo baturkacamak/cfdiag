@@ -8,53 +8,46 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 
 ### Core Diagnostics
 *   **Dual-Stack DNS Analysis:** Verifies both **IPv4** (A) and **IPv6** (AAAA) resolution.
+*   **Offline ASN Detection:** Uses DNS-based lookup to identify ISPs/ASNs without external HTTP APIs (Privacy-first).
 *   **DNS Propagation Check:** Checks global resolvers (Google, Cloudflare, Quad9, etc.) to see if your Nameserver changes have propagated worldwide.
 *   **DNSSEC Validation:** Checks if the domain's chain of trust is intact or broken.
-*   **Domain Registration Status:** Checks RDAP data to see if the domain is active, suspended, or expired.
-*   **ISP/ASN Detection:** Automatically identifies the hosting provider (e.g., AWS, DigitalOcean) of the resolved IP.
-*   **Blacklist/Reputation:** Checks common DNSBLs (Spamhaus, etc.) to see if the IP is flagged.
-*   **HTTP Inspection:** Smarter than just `ping`. Detects specific HTTP error codes (522, 525, 502) and analyzes headers.
-*   **Performance Metrics:** Measures **TTFB** (Time To First Byte) and Connect Time to identify backend slowness vs network lag.
+*   **SSL/TLS Handshake:** Verifies certificate validity, expiration, and **OCSP Stapling** status.
 *   **HTTP/3 (QUIC) Check:** Verifies if UDP Port 443 is open/filtered.
-*   **SSL/TLS Handshake:** Verifies certificate validity and expiration dates using native Python SSL libraries.
-*   **TCP Connectivity:** Checks if port 443 is actually open using native sockets (no `nc` required).
+*   **Security Header Audit:** Checks for HSTS, CSP, and verifies **HSTS Preload** eligibility.
 
 ### Advanced Debugging (The "Pro" Stuff)
-*   **Direct Origin Test:** (Using `--origin <IP>`) Bypasses Cloudflare to connect directly to your server. **Definitively proves** if the issue is a firewall blocking Cloudflare or if the server is down.
-*   **WAF/Challenge Detection:** Analyzes response bodies to see if you are being blocked by a Cloudflare Managed Challenge (Captcha) rather than a network error.
-*   **MTU/Fragmentation Check:** Tests packet sizes to detect Path MTU Discovery blackholes (a common hidden cause of timeouts).
-*   **Cloudflare Trace:** Fetches debug data (`/cdn-cgi/trace`) to identify the specific Cloudflare Data Center (`Colo`) and connection status.
-*   **Alternative Port Scan:** If port 443 is blocked, it automatically scans valid Cloudflare alternative ports (2053, 8443, 2083, etc.) to find a workaround.
+*   **Redirect Chain Analysis:** Traces the full path of redirects (301->302->200) to detect loops instantly.
+*   **WAF Evasion Test:** Retries requests with different User-Agents (Chrome, Googlebot, etc.) to detect if a block is due to Bot Protection.
+*   **Direct Origin Test:** (Using `--origin <IP>`) Bypasses Cloudflare to connect directly to your server. Definitively proves if the issue is a firewall blocking Cloudflare IPs.
+*   **Report Comparison:** Diff two reports (`--diff old.txt new.txt`) to spot exactly what changed (Latency, Routes, IPs).
+*   **MTU/Fragmentation Check:** Tests packet sizes to detect Path MTU Discovery blackholes.
 
 ### Utilities
-*   **Batch Mode:** Scan a list of domains from a file: `cfdiag --file domains.txt`
-*   **Config File:** Save your preferences (like origin IP) in `~/.cfdiag.json`.
-*   **Self-Update:** Run with `--update` to automatically pull the latest version from GitHub.
-*   **Reporting:** 
-    *   Beautiful console output.
-    *   Detailed text logs (`reports/domain.txt`).
-    *   **HTML Reports** (`reports/domain.html`) for easy sharing.
+*   **High-Speed Batch Mode:** Scan hundreds of domains in seconds using multi-threading (`--threads 50`).
+*   **Proxy Support:** Run diagnostics from behind a corporate proxy (`--proxy http://...`).
+*   **IP Version Forcing:** Force IPv4 (`--ipv4`) or IPv6 (`--ipv6`) to isolate stack issues.
+*   **Metrics Export:** Generates Prometheus-compatible metrics (`metrics.prom`) for monitoring integration.
+*   **History & Trending:** Automatically compares latency (TTFB) with the previous run to detect performance degradation.
 
 ## Installation
 
-### Requirements
-*   **Python 3.6+**
-*   **System Tools:** `curl`, `traceroute` (Linux/Mac) or `tracert` (Windows), `ping`, `dig` (Optional, for DNSSEC).
-    *   *Note: Windows 10/11 includes `curl` and `tracert` by default.*
+### Option 1: Standalone Binary (Recommended)
+Download the latest single-file executable for your OS from the [Releases Page](https://github.com/baturkacamak/cfdiag/releases). No Python installation required.
 
-### Setup
+### Option 2: Pip (Python Package)
+```bash
+pip install . 
+# (Once published to PyPI: pip install cfdiag)
+```
+
+### Option 3: Source
 ```bash
 git clone git@github.com:baturkacamak/cfdiag.git
 cd cfdiag
-# Linux/macOS
-chmod +x cfdiag.py
 python3 cfdiag.py example.com
-
-# Windows
-python cfdiag.py example.com
 ```
 
-### Docker
+### Option 4: Docker
 ```bash
 docker build -t cfdiag .
 docker run --rm cfdiag example.com
@@ -65,43 +58,31 @@ docker run --rm cfdiag example.com
 ### Basic Usage
 Run a diagnostic (summary only):
 ```bash
-./cfdiag example.com
+cfdiag example.com
 ```
 
-Show verbose output (all steps):
+### Troubleshooting
+Force IPv4 or use a Proxy:
 ```bash
-./cfdiag example.com --verbose
-```
-
-### Configuration File
-Create a `.cfdiag.json` in your home directory or current folder:
-```json
-{
-  "profiles": {
-    "prod": { "domain": "example.com", "origin": "1.2.3.4" }
-  }
-}
-```
-Run with profile:
-```bash
-./cfdiag --profile prod
+cfdiag example.com --ipv4 --proxy http://10.0.0.1:8080
 ```
 
 ### Power User Usage
-Check direct origin connectivity and propagation:
+Check direct origin connectivity, propagation, and enable metrics:
 ```bash
-./cfdiag example.com --origin 192.0.2.123 --expect ns1.digitalocean.com
+cfdiag example.com --origin 192.0.2.123 --expect ns1.digitalocean.com --metrics
 ```
 
-### Batch Mode
-Check multiple domains at once:
+### Batch Mode (High Performance)
+Check 100 domains with 20 concurrent threads:
 ```bash
-./cfdiag --file my_domains.txt
+cfdiag --file domains.txt --threads 20
 ```
 
-### Update Tool
+### Compare Reports
+See what changed between yesterday and today:
 ```bash
-./cfdiag --update
+cfdiag --diff reports/example.com/2026-01-19.txt reports/example.com/2026-01-20.txt
 ```
 
 ## License
