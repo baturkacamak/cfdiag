@@ -23,6 +23,7 @@ import platform
 import textwrap
 import re
 import os
+import json
 
 # --- Configuration & Constants ---
 
@@ -31,6 +32,9 @@ SUB_SEPARATOR = "-" * 60
 
 # Required system tools
 REQUIRED_TOOLS = ["dig", "curl", "nc", "traceroute", "openssl", "ping"]
+
+# Cloudflare compatible ports
+CF_PORTS = [8443, 2053, 2083, 2087, 2096] # HTTPS ports
 
 # Colors (ANSI escape codes)
 class Colors:
@@ -54,7 +58,7 @@ class FileLogger:
     """Handles printing to stdout and buffering for clean file output."""
     def __init__(self):
         self.file_buffer = []
-        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\-_]|[0-?]*[ -/]*[@-~])')
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|[0-?]*[ -/]*[@-~])')
 
     def log_console(self, msg="", end="\n", flush=False):
         """Prints directly to console only."""
@@ -301,7 +305,7 @@ def run_command(command, timeout=30, show_output=True, log_output_to_file=True):
 # --- Diagnostic Steps ---
 
 def step_dns(domain):
-    print_subheader("1. DNS Resolution Check")
+    print_subheader("1. DNS Resolution & ASN/ISP Check")
     print_cmd(f"dig {domain} +short")
     
     code, output = run_command(f"dig {domain} +short", log_output_to_file=True)
@@ -311,6 +315,26 @@ def step_dns(domain):
         lines = [l.strip() for l in output.splitlines() if l.strip()]
         if lines:
             print_success(f"DNS Resolved to: {Colors.WHITE}{', '.join(lines)}{Colors.ENDC}")
+            
+            # ISP/ASN Check (Feature 2)
+            # Use the first IP found
+            target_ip = lines[0]
+            # Simple check to skip private IPs
+            if not target_ip.startswith("192.168.") and not target_ip.startswith("10."):
+                cmd_asn = f"curl -s --connect-timeout 3 http://ip-api.com/json/{target_ip}"
+                # We run silently, not showing full JSON to console, but logging it
+                print_info(f"Identifying ISP for {target_ip}...")
+                c2, out2 = run_command(cmd_asn, show_output=False, log_output_to_file=True)
+                if c2 == 0:
+                    try:
+                        data = json.loads(out2)
+                        isp = data.get("isp", "Unknown")
+                        org = data.get("org", "Unknown")
+                        country = data.get("country", "Unknown")
+                        print_success(f"Host: {Colors.WHITE}{isp} ({org}) - {country}{Colors.ENDC}")
+                    except json.JSONDecodeError:
+                        print_warning("Could not parse ISP information.")
+
             return True, lines
         else:
             print_fail("DNS returned empty result.")
@@ -357,17 +381,22 @@ def step_dns_compare(domain):
         return False
 
 def step_http(domain):
-    print_subheader("3. HTTP/HTTPS Availability (Primary Signal)")
+    print_subheader("3. HTTP/HTTPS Availability & WAF Check")
     # Using 10 second connect timeout to detect drops quickly
+    # We fetch the body now to check for WAF signatures (-I is head only, we need body for WAF check if 403)
+    # But for speed/size, we usually stick to -I. We will use -I first.
+    
     cmd = f"curl -I --connect-timeout 10 https://{domain}"
     print_cmd(cmd)
     
     code, output = run_command(cmd, log_output_to_file=True)
     
+    status_code = 0
+    waf_detected = False
+    
     if code == 0:
         # Parse status code
         status_line = next((line for line in output.splitlines() if line.startswith("HTTP/")), None)
-        status_code = 0
         
         if status_line:
             parts = status_line.split()
@@ -377,27 +406,46 @@ def step_http(domain):
                 except ValueError:
                     pass
             
+            # WAF/Challenge Logic (Feature 4)
+            if status_code in [403, 503]:
+                print_warning(f"Status {status_code} detected. Checking for Cloudflare WAF/Challenge...")
+                # Fetch body to inspect
+                cmd_body = f"curl -s -A 'Mozilla/5.0' --connect-timeout 5 https://{domain}"
+                c2, out2 = run_command(cmd_body, show_output=False, log_output_to_file=False)
+                if c2 == 0:
+                    if "Just a moment..." in out2 or "cf-captcha-container" in out2 or "challenge-platform" in out2:
+                        waf_detected = True
+                        print_warning(f"{Colors.BOLD}Cloudflare Managed Challenge / CAPTCHA detected.{Colors.ENDC}")
+                    else:
+                        print_info("No obvious WAF challenge signature found in body.")
+
             if 200 <= status_code < 400:
                 print_success(f"Response received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
-                return "SUCCESS", status_code
+                return "SUCCESS", status_code, False
             elif 400 <= status_code < 500:
-                print_warning(f"Client Error received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
-                return "CLIENT_ERROR", status_code
+                if waf_detected:
+                    return "WAF_BLOCK", status_code, True
+                else:
+                    print_warning(f"Client Error received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
+                    return "CLIENT_ERROR", status_code, False
             elif status_code >= 500:
-                print_fail(f"Server Error received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
-                return "SERVER_ERROR", status_code
+                if waf_detected: # 503 is common for "Under Attack Mode"
+                    return "WAF_BLOCK", status_code, True
+                else:
+                    print_fail(f"Server Error received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
+                    return "SERVER_ERROR", status_code, False
             else:
                  print_warning(f"Unexpected status: {status_line.strip()}")
-                 return "WEIRD", status_code
+                 return "WEIRD", status_code, False
         else:
             print_warning("Connection successful, but no HTTP status header found.")
-            return "WEIRD", 0
+            return "WEIRD", 0, False
     elif code == 28: # curl timeout code
         print_fail("Connection timed out (Likely 522 cause).")
-        return "TIMEOUT", 0
+        return "TIMEOUT", 0, False
     else:
         print_fail(f"curl failed with exit code {code}.")
-        return "ERROR", 0
+        return "ERROR", 0, False
 
 def step_ssl(domain):
     print_subheader("4. SSL/TLS Certificate Check")
@@ -430,8 +478,31 @@ def step_tcp(domain):
         print_fail("Failed to establish TCP connection.")
         return False
 
+def step_alt_ports(domain):
+    # Feature 3: Alternative Port Scan
+    print_subheader("6. Alternative Cloudflare Port Scan")
+    print_info("Scanning other Cloudflare HTTPS ports to find a workaround...")
+    
+    open_ports = []
+    
+    for port in CF_PORTS:
+        cmd = f"nc -vz -w 2 {domain} {port}"
+        code, _ = run_command(cmd, show_output=False, log_output_to_file=True)
+        if code == 0:
+            print_success(f"Port {port}: {Colors.BOLD}OPEN{Colors.ENDC}")
+            open_ports.append(port)
+        else:
+            # Silent fail to keep output clean, just log to file
+            pass
+            
+    if open_ports:
+        return True, open_ports
+    else:
+        print_warning("No alternative HTTPS ports (8443, 2053, etc.) are open.")
+        return False, []
+
 def step_mtu(domain):
-    print_subheader("6. MTU / Fragmentation Check")
+    print_subheader("7. MTU / Fragmentation Check")
     print_info("Testing packet size 1472 (1500 MTU) to detect fragmentation issues.")
     
     system = platform.system()
@@ -463,7 +534,7 @@ def step_mtu(domain):
         return False
 
 def step_traceroute(domain):
-    print_subheader("7. Network Path (Traceroute)")
+    print_subheader("8. Network Path (Traceroute)")
     # traceroute can take a long time, so we just run it and show output
     cmd = f"traceroute -m 15 -w 2 {domain}" # Max 15 hops, 2s wait to speed up
     print_cmd(cmd)
@@ -479,7 +550,7 @@ def step_traceroute(domain):
         return False
 
 def step_cf_trace(domain):
-    print_subheader("8. Cloudflare Debug Trace (cdn-cgi/trace)")
+    print_subheader("9. Cloudflare Debug Trace (cdn-cgi/trace)")
     cmd = f"curl -s --connect-timeout 5 https://{domain}/cdn-cgi/trace"
     print_cmd(cmd)
     
@@ -504,7 +575,7 @@ def step_cf_trace(domain):
         return False, {}
 
 def step_cf_forced(domain):
-    print_subheader("9. Cloudflare Forced Resolution Test")
+    print_subheader("10. Cloudflare Forced Resolution Test")
     print_info("Attempting to connect via Cloudflare DNS resolver (1.1.1.1) to test edge reachability.")
     print_info("Note: This tests network path to a known Cloudflare IP. Certificate errors are expected.")
     
@@ -523,7 +594,7 @@ def step_cf_forced(domain):
         return False
 
 def step_origin_connect(domain, origin_ip):
-    print_subheader("10. Direct Origin Connectivity Test")
+    print_subheader("11. Direct Origin Connectivity Test")
     print_info(f"Attempting to bypass Cloudflare and connect directly to {origin_ip}...")
     
     # --resolve domain:443:origin_ip forces curl to send the request to origin_ip 
@@ -563,7 +634,7 @@ def step_origin_connect(domain, origin_ip):
 
 # --- Summary & Analysis ---
 
-def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res):
+def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res):
     print_header("DIAGNOSTIC SUMMARY")
     
     logger.log_console(f"Target: {Colors.BOLD}{domain}{Colors.ENDC}")
@@ -599,6 +670,14 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
     else:
          conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} TCP connection failed.",
                              "[CRITICAL] TCP connection failed."))
+         
+         # Feature 3: Alt Ports Advice
+         if alt_ports_res[0]:
+             ports_str = ", ".join([str(p) for p in alt_ports_res[1]])
+             conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[WORKAROUND]{Colors.ENDC} Alternative Ports are OPEN: {ports_str}.",
+                                 f"[WORKAROUND] Alternative Ports are OPEN: {ports_str}."))
+             conclusions.append(("  -> You can temporarily bypass the 443 block by using one of these ports.",
+                                 "  -> You can temporarily bypass the 443 block by using one of these ports."))
     
     # MTU
     if mtu_res:
@@ -609,11 +688,16 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
                              "[WARN] MTU/Fragmentation issues detected. Check your network configuration."))
 
     # HTTP Analysis (The core of 522)
-    http_status, http_code = http_res
+    http_status, http_code, is_waf = http_res
     
     if http_status == "SUCCESS":
         conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} HTTP requests are working (Code {http_code}).",
                             f"[PASS] HTTP requests are working (Code {http_code})."))
+    elif http_status == "WAF_BLOCK":
+        conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[BLOCK]{Colors.ENDC} Cloudflare WAF/Challenge detected (Code {http_code}).",
+                            f"[BLOCK] Cloudflare WAF/Challenge detected (Code {http_code})."))
+        conclusions.append(("  -> The site is UP, but you are being challenged (Captcha/Managed Challenge).",
+                            "  -> The site is UP, but you are being challenged (Captcha/Managed Challenge)."))
     elif http_status == "CLIENT_ERROR":
          conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} Server returned Client Error (Code {http_code}).",
                              f"[WARN] Server returned Client Error (Code {http_code})."))
@@ -732,25 +816,31 @@ def main():
     # 2. DNS
     dns_ok, dns_ips = step_dns(target_domain)
     
-    # 2.5 DNS Compare (New)
+    # 2.5 DNS Compare
     step_dns_compare(target_domain)
     
     # 3. HTTP HEAD (Primary 522 Check)
     http_result = step_http(target_domain)
     
-    # 3.5 SSL Check (New)
+    # 3.5 SSL Check
     ssl_ok = step_ssl(target_domain)
     
     # 4. TCP Connect
     tcp_ok = step_tcp(target_domain)
     
-    # 4.5 MTU Check (New)
+    # 4.5 MTU Check
     mtu_ok = step_mtu(target_domain)
+    
+    # NEW: 4.6 Alt Ports
+    # Only check if main TCP 443 failed or HTTP failed
+    alt_ports_res = (False, [])
+    if not tcp_ok or http_result[1] == 0: 
+        alt_ports_res = step_alt_ports(target_domain)
     
     # 5. Traceroute
     step_traceroute(target_domain)
     
-    # 6. CF Debug Trace (New)
+    # 6. CF Debug Trace
     cf_trace_ok = step_cf_trace(target_domain)
     
     # 7. CF Force Resolve
@@ -762,7 +852,7 @@ def main():
         origin_res = step_origin_connect(target_domain, args.origin)
     
     # 9. Summary
-    generate_summary(target_domain, (dns_ok, dns_ips), http_result, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res)
+    generate_summary(target_domain, (dns_ok, dns_ips), http_result, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res, alt_ports_res)
     
     # 10. Save Log
     if logger.save_to_file(log_filename):
