@@ -1,0 +1,42 @@
+name: Build Binaries
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install PyInstaller
+      run: pip install pyinstaller
+
+    - name: Build with PyInstaller
+      run: pyinstaller --onefile --name cfdiag cfdiag.py
+
+    - name: Upload Artifact (Linux/Mac)
+      if: runner.os != 'Windows'
+      uses: actions/upload-artifact@v3
+      with:
+        name: cfdiag-${{ runner.os }}
+        path: dist/cfdiag
+
+    - name: Upload Artifact (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v3
+      with:
+        name: cfdiag-Windows
+        path: dist/cfdiag.exe
