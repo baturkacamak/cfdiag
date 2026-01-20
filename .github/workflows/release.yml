@@ -21,7 +21,7 @@ jobs:
             asset_name: cfdiag-linux-amd64
           - os: windows-latest
             artifact_name: cfdiag.exe
-            asset_name: cfdiag-windows-amd64
+            asset_name: cfdiag-windows-amd64.exe
           - os: macos-latest
             artifact_name: cfdiag
             asset_name: cfdiag-macos-amd64
@@ -87,8 +87,23 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
+      - name: Rename Binaries for Release
+        run: |
+          # Artifacts are downloaded into directories named after the artifact
+          # Structure:
+          # cfdiag-linux-amd64/cfdiag
+          # cfdiag-windows-amd64/cfdiag.exe
+          # cfdiag-macos-amd64/cfdiag
+          
+          mkdir release_assets
+          
+          cp cfdiag-linux-amd64/cfdiag release_assets/cfdiag-linux-amd64
+          cp cfdiag-windows-amd64/cfdiag.exe release_assets/cfdiag-windows-amd64.exe
+          cp cfdiag-macos-amd64/cfdiag release_assets/cfdiag-macos-amd64
+          cp cfdiag-deb/*.deb release_assets/
+
       - name: List Files
-        run: ls -R
+        run: ls -R release_assets
 
       - name: Create Release
         id: create_release
@@ -99,10 +114,6 @@ jobs:
           body_path: CHANGELOG.md
           draft: false
           prerelease: false
-          files: |
-            cfdiag-linux-amd64/cfdiag
-            cfdiag-windows-amd64/cfdiag.exe
-            cfdiag-macos-amd64/cfdiag
-            cfdiag-deb/*.deb
+          files: release_assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
