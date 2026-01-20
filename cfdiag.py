@@ -188,14 +188,16 @@ def print_header(title: str) -> None:
         logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}{SEPARATOR}", force=True)
         logger.log_console(f" {title}", force=True)
         logger.log_console(f"{SEPARATOR}{Colors.ENDC}", force=True)
-        logger.log_file(f"\n# {title}")
-        logger.log_file("# " + "=" * len(title))
+        logger.log_file(f"\n{SEPARATOR}")
+        logger.log_file(f" {title}")
+        logger.log_file(f"{SEPARATOR}")
 
 def print_subheader(title: str) -> None:
     if logger:
         logger.log_console(f"\n{Colors.BOLD}{Colors.OKCYAN}>>> {title}{Colors.ENDC}")
         logger.log_console(f"{Colors.GREY}{SUB_SEPARATOR}{Colors.ENDC}")
-        logger.log_file(f"\n## {title}")
+        logger.log_file(f"\n>>> {title}")
+        logger.log_file(f"{SUB_SEPARATOR}")
 
 def print_success(msg: str) -> None:
     if logger: logger.log(f"{Colors.OKGREEN}{Colors.BOLD}✔ [PASS]{Colors.ENDC} {msg}", file_msg=f"[PASS] {msg}")
@@ -577,6 +579,65 @@ def step_alt_ports(domain: str) -> Tuple[bool, List[int]]:
     print_subheader("16. Alt Ports")
     return False, []
 
+def generate_summary(domain: str, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res) -> None:
+    if not logger: return
+    logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}{SEPARATOR}", force=True)
+    logger.log_console(f" DIAGNOSTIC SUMMARY: {domain}", force=True)
+    logger.log_console(f"{SEPARATOR}{Colors.ENDC}", force=True)
+    
+    logger.log_file(f"\n{SEPARATOR}")
+    logger.log_file(f" DIAGNOSTIC SUMMARY")
+    logger.log_file(f"{SEPARATOR}")
+    
+    dns_ok, ipv4, ipv6 = dns_res
+    if not dns_ok:
+        logger.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} DNS Resolution failed.", file_msg="[CRITICAL] DNS Resolution failed.", force=True)
+    else:
+        logger.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} DNS is resolving correctly.", file_msg="[PASS] DNS is resolving correctly.", force=True)
+
+    if ssl_res:
+         logger.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} SSL Certificate is valid.", file_msg="[PASS] SSL Certificate is valid.", force=True)
+    else:
+         logger.log(f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} SSL Certificate information could not be verified.", file_msg="[WARN] SSL Certificate information could not be verified.", force=True)
+
+    if tcp_res:
+         logger.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} TCP (Port 443) is open.", file_msg="[PASS] TCP (Port 443) is open.", force=True)
+    else:
+         logger.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} TCP connection failed.", file_msg="[CRITICAL] TCP connection failed.", force=True)
+
+    http_status, http_code, is_waf, metrics = http_res
+    if http_status == "SUCCESS":
+        logger.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} HTTP requests are working (Code {http_code}).", file_msg=f"[PASS] HTTP requests are working (Code {http_code}).", force=True)
+    elif http_status == "WAF_BLOCK":
+        logger.log(f"{Colors.WARNING}{Colors.BOLD}[BLOCK]{Colors.ENDC} Cloudflare WAF/Challenge detected (Code {http_code}).", file_msg=f"[BLOCK] Cloudflare WAF/Challenge detected (Code {http_code}).", force=True)
+    elif http_status == "CLIENT_ERROR":
+         logger.log(f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} Server returned Client Error (Code {http_code}).", file_msg=f"[WARN] Server returned Client Error (Code {http_code}).", force=True)
+    elif http_status == "SERVER_ERROR":
+         logger.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} Server returned Error (Code {http_code}).", file_msg=f"[CRITICAL] Server returned Error (Code {http_code}).", force=True)
+         if http_code == 522:
+             logger.log(f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 522: Connection Timed Out to Origin.", file_msg="[ALERT] Cloudflare 522: Connection Timed Out to Origin.", force=True)
+         elif http_code == 525:
+             logger.log(f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 525: SSL Handshake Failed with Origin.", file_msg="[ALERT] Cloudflare 525: SSL Handshake Failed with Origin.", force=True)
+    elif http_status == "TIMEOUT":
+        logger.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} HTTP Request Timed Out (Potential 522).", file_msg="[CRITICAL] HTTP Request Timed Out (Potential 522).", force=True)
+
+    if origin_res:
+        connected, reason = origin_res
+        if connected and reason == "SUCCESS":
+             logger.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Direct Origin Connection SUCCEEDED.", file_msg="[PASS] Direct Origin Connection SUCCEEDED.", force=True)
+             if http_code in [522, 524, 502, 504]:
+                  logger.log(f"{Colors.FAIL}{Colors.BOLD}[DIAGNOSIS]{Colors.ENDC} Origin is UP but Cloudflare is failing.", file_msg="[DIAGNOSIS] Origin is UP but Cloudflare is failing.", force=True)
+                  logger.log("  -> CAUSE: Firewall is likely blocking Cloudflare IPs.", file_msg="  -> CAUSE: Firewall is likely blocking Cloudflare IPs.", force=True)
+        elif not connected and reason == "TIMEOUT":
+             logger.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} Direct Origin Connection TIMED OUT.", file_msg="[CRITICAL] Direct Origin Connection TIMED OUT.", force=True)
+             logger.log(f"{Colors.FAIL}{Colors.BOLD}[DIAGNOSIS]{Colors.ENDC} Origin Server is DOWN or Unreachable.", file_msg="[DIAGNOSIS] Origin Server is DOWN or Unreachable.", force=True)
+
+    if cf_res or cf_trace_res[0]:
+        logger.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Cloudflare Edge Network is reachable.", file_msg="[PASS] Cloudflare Edge Network is reachable.", force=True)
+
+    logger.log_console(f"\n{Colors.GREY}{SEPARATOR}{Colors.ENDC}", force=True)
+    logger.log_file(f"\n{SEPARATOR}")
+
 # --- Orchestrator ---
 
 def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None) -> Dict[str, Any]:
@@ -600,21 +661,24 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     step_domain_status(domain)
     
     http_res = step_http(domain)
-    step_security_headers(domain) # Feature 2
+    step_security_headers(domain)
     step_http3_udp(domain)
     ssl_ok = step_ssl(domain)
     tcp_ok = step_tcp(domain)
-    step_mtu(domain)
+    mtu_ok = step_mtu(domain)
     
     alt_ports_res = (False, [])
     if not tcp_ok: alt_ports_res = step_alt_ports(domain)
         
     step_traceroute(domain)
     cf_trace_ok = step_cf_trace(domain)
-    step_cf_forced(domain)
+    cf_ok = step_cf_forced(domain)
     origin_res = step_origin(domain, origin_ip) if origin_ip else None
 
-    # Summary
+    # Generate Text Summary (Console + Log File)
+    generate_summary(domain, (dns_ok, ipv4, ipv6), http_res, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res, alt_ports_res)
+
+    # Populate HTML Summary
     summary = []
     summary.append(f"DNS: {'PASS' if dns_ok else 'FAIL'}")
     summary.append(f"HTTP: {http_res[0]}")
