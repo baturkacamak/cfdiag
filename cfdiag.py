@@ -36,7 +36,7 @@ from typing import List, Tuple, Dict, Optional, Any, Union
 
 # --- Configuration & Constants ---
 
-VERSION = "2.8.0"
+VERSION = "2.9.1"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -108,7 +108,7 @@ class FileLogger:
             "steps": [],
             "summary": []
         }
-        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|[[0-?]*[ -/]*[@-~])')
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\-_]|[[0-?]*[ -/]*[@-~])')
         self.verbose = verbose 
         self.silent = silent   
 
@@ -246,6 +246,7 @@ def print_cmd(cmd: str) -> None:
 def check_dependencies() -> None:
     missing = []
     if not shutil.which("curl"): missing.append("curl")
+    if not shutil.which("openssl"): missing.append("openssl")
     trace_cmd = "tracert" if os.name == 'nt' else "traceroute"
     if not shutil.which(trace_cmd) and os.name != 'nt' and not os.path.exists("/usr/sbin/traceroute"):
          missing.append("traceroute")
@@ -263,7 +264,8 @@ def run_command(command: str, timeout: int = 30, show_output: bool = True, log_o
             if not line and process.poll() is not None: break
             if line:
                 if show_output and l and l.verbose and not l.silent: 
-                    with console_lock: sys.stdout.write(line) 
+                    with console_lock:
+                        sys.stdout.write(line) 
                 output_lines.append(line)
         
         full_output = "".join(output_lines)
@@ -479,9 +481,11 @@ def step_domain_status(domain: str) -> None:
 
 def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     print_subheader("7. HTTP/HTTPS Availability")
+    # Use ;; as delimiter
     fmt = "code=%{http_code};;connect=%{time_connect};;start=%{time_starttransfer};;total=%{time_total}"
     cmd = f"curl -I -w \"{fmt}\" --connect-timeout 10 https://{domain}"
     print_cmd(cmd)
+    
     code, output = run_command(cmd, log_output_to_file=True)
     
     status = 0
@@ -523,6 +527,7 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
         print_info(f"Latency: Connect={conn_ms}ms, TTFB={ttfb_ms}ms")
 
     step_cache_headers(output)
+    
     return ("SUCCESS" if 200<=status<400 else "FAIL"), status, False, metrics
 
 def step_cache_headers(http_output: str) -> None:
@@ -534,12 +539,14 @@ def step_cache_headers(http_output: str) -> None:
     
     cache_status = headers.get('cf-cache-status', 'MISSING')
     server = headers.get('server', '').lower()
+    
     l = get_logger()
     if 'cloudflare' in server:
         if cache_status in ['HIT', 'DYNAMIC', 'BYPASS', 'EXPIRED', 'MISS']:
             print_info(f"Cache Status: {Colors.WHITE}{cache_status}{Colors.ENDC}")
         elif cache_status == 'MISSING':
             print_warning("Cloudflare active but 'cf-cache-status' header missing.")
+        
         if l: l.add_html_step("Cache Analysis", "INFO", f"Status: {cache_status}")
 
 def step_security_headers(domain: str) -> None:
@@ -572,6 +579,15 @@ def step_security_headers(domain: str) -> None:
         else:
             print_warning(f"{name}: Missing")
             details += f"{name}: MISSING\n"
+    
+    # HSTS Preload Feature
+    if 'strict-transport-security' in headers:
+        val = headers['strict-transport-security']
+        if 'preload' in val and 'includesubdomains' in val and 'max-age=' in val:
+            age = int(re.search(r'max-age=(\d+)', val).group(1)) # type: ignore
+            if age >= 31536000:
+                print_success("HSTS: Ready for Preload.")
+    
     l = get_logger()
     if l: l.add_html_step("Security Headers", f"{passed}/{len(checks)}", details)
 
@@ -603,6 +619,20 @@ def step_ssl(domain: str) -> bool:
         print_fail(f"SSL Failed: {e}")
         if l: l.add_html_step("SSL", "FAIL", str(e))
         return False
+
+def step_ocsp(domain: str) -> None:
+    print_subheader("9.5 OCSP Stapling Check")
+    if not shutil.which("openssl"): return
+    cmd = f"openssl s_client -servername {domain} -connect {domain}:443 -status"
+    c, out = run_command(f"echo Q | {cmd}", log_output_to_file=True, show_output=False)
+    l = get_logger()
+    if c == 0:
+        if "OCSP Response Status: successful" in out:
+            print_success("OCSP Stapling: Active (Successful Response)")
+            if l: l.add_html_step("OCSP Stapling", "PASS", "Active")
+        elif "OCSP Response: no response sent" in out:
+            print_warning("OCSP Stapling: Not Active")
+            if l: l.add_html_step("OCSP Stapling", "WARN", "Not Active")
 
 def step_tcp(domain: str) -> bool:
     print_subheader("10. TCP Connectivity")
@@ -650,19 +680,11 @@ def step_alt_ports(domain: str) -> Tuple[bool, List[int]]:
     return False, []
 
 def step_redirects(domain: str) -> None:
-    # Feature 1: Redirect Chain
     print_subheader("17. Redirect Chain Analysis")
-    # Using curl to follow redirects and print url_effective
-    # curl -L -w "%{{url_effective}}\n" -I -o /dev/null
-    # But we want to see the hops.
-    # Python urllib is easier for this logic?
-    # No, curl -v or just iterative requests.
-    # Let's use iterative curl -I requests.
-    
-    current_url = f"http://{domain}" # Start with http to see if it redirects to https
+    current_url = f"http://{domain}"
     hops = []
     
-    for i in range(5): # Max 5 hops
+    for i in range(5): 
         hops.append(current_url)
         cmd = f'curl -I -s -w "%{{redirect_url}}" -o /dev/null {current_url}'
         c, next_url = run_command(cmd, show_output=False, log_output_to_file=True)
@@ -677,16 +699,12 @@ def step_redirects(domain: str) -> None:
     if l: l.add_html_step("Redirects", "INFO", "\n".join(hops))
 
 def step_waf_evasion(domain: str) -> None:
-    # Feature 2: User-Agent Fuzzing
     print_subheader("18. WAF / User-Agent Test")
-    
     blocked = []
     allowed = []
-    
     for name, ua in USER_AGENTS.items():
         cmd = f'curl -I -s -o /dev/null -w "%{{http_code}}" -H "User-Agent: {ua}" https://{domain}'
         c, code_str = run_command(cmd, show_output=False, log_output_to_file=True)
-        
         try:
             code = int(code_str)
             if code == 403 or code == 406:
@@ -696,7 +714,6 @@ def step_waf_evasion(domain: str) -> None:
                 print_success(f"{name}: OK (HTTP {code})")
                 allowed.append(name)
         except: pass
-    
     l = get_logger()
     if blocked:
         l.log(f"{Colors.WARNING}WAF Detected: Blocks {', '.join(blocked)}{Colors.ENDC}", force=True)
@@ -817,6 +834,7 @@ def run_diagnostics_impl(domain: str, origin_ip: Optional[str]=None, expected_ns
     step_security_headers(domain)
     step_http3_udp(domain)
     ssl_ok = step_ssl(domain)
+    step_ocsp(domain)
     tcp_ok = step_tcp(domain)
     mtu_ok = step_mtu(domain)
     alt_ports_res = (False, [])
@@ -826,13 +844,9 @@ def run_diagnostics_impl(domain: str, origin_ip: Optional[str]=None, expected_ns
     cf_ok = step_cf_forced(domain)
     origin_res = step_origin(domain, origin_ip) if origin_ip else None
     
-    # Feature 1: Redirects
     step_redirects(domain)
-    
-    # Feature 2: WAF Evasion
     step_waf_evasion(domain)
 
-    # History
     current_metrics = {
         "timestamp": time.time(),
         "http_status": http_res[1],
@@ -861,6 +875,7 @@ def run_diagnostics_impl(domain: str, origin_ip: Optional[str]=None, expected_ns
     }
 
 def main() -> None:
+    global logger
     parser = argparse.ArgumentParser()
     parser.add_argument("domain", nargs='?')
     parser.add_argument("--origin")
