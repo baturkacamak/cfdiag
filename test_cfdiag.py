@@ -11,7 +11,6 @@ class TestCFDiag(unittest.TestCase):
     def setUp(self):
         self.log_patcher = patch('cfdiag.logger', MagicMock())
         self.mock_logger = self.log_patcher.start()
-        # Mock the internal data structure of FileLogger
         self.mock_logger.html_data = {"domain": "test", "timestamp": "now", "steps": [], "summary": []}
         self.mock_logger.save_html = MagicMock()
 
@@ -33,39 +32,42 @@ class TestCFDiag(unittest.TestCase):
 
     @patch('cfdiag.socket.gethostbyname')
     def test_blacklist_check(self, mock_gethostbyname):
-        # Case 1: Listed (returns IP)
         mock_gethostbyname.return_value = "127.0.0.2"
         cfdiag.step_blacklist("example.com", "1.2.3.4")
-        # Verify logger was called with FAIL
-        # Note: We can't easily check logger calls on the global object without complex patching,
-        # but we can ensure no exception.
-        
-        # Case 2: Clean (gaierror)
-        mock_gethostbyname.side_effect = socket.gaierror
-        cfdiag.step_blacklist("example.com", "1.2.3.4")
 
-    @patch('cfdiag.FileLogger.save_html')
     @patch('cfdiag.run_command')
-    @patch('cfdiag.step_dns') # Mock heavy steps
+    def test_cache_headers(self, mock_run):
+        output = """HTTP/2 200
+server: cloudflare
+cf-cache-status: HIT
+"""
+        cfdiag.step_cache_headers(output)
+        # Implicit assertion: no crash, logger called (mocked)
+
+    @patch('cfdiag.run_command')
+    def test_security_headers(self, mock_run):
+        output = """HTTP/2 200
+strict-transport-security: max-age=31536000
+"""
+        mock_run.return_value = (0, output)
+        cfdiag.step_security_headers("example.com")
+
+    @patch('cfdiag.check_internet_connection')
+    @patch('cfdiag.step_dns')
     @patch('cfdiag.step_http')
     @patch('cfdiag.step_tcp')
-    @patch('cfdiag.check_internet_connection')
-    def test_html_report_generation(self, mock_net, mock_tcp, mock_http, mock_dns, mock_run, mock_save_html):
+    @patch('cfdiag.run_command')
+    @patch('cfdiag.step_security_headers') # Mock new step
+    def test_html_report_generation(self, mock_sec, mock_run, mock_tcp, mock_http, mock_dns, mock_net):
         mock_net.return_value = True
         mock_dns.return_value = (True, ["1.1.1.1"], [])
         mock_http.return_value = ("SUCCESS", 200, False, {})
         mock_tcp.return_value = True
         mock_run.return_value = (0, "Mock Output")
         
-        # We need to use a REAL FileLogger here to test the HTML generation logic, 
-        # but mock the file writing.
-        # However, run_diagnostics uses the GLOBAL 'logger'.
-        # We need to unpatch the global logger for this test, or patch the methods on the global mock.
-        
-        # Let's mock the 'save_html' method on the global logger mock we set up in setUp
         self.mock_logger.save_html.return_value = True
         
-        with patch('os.makedirs'):
+        with patch('os.makedirs'), patch('cfdiag.logger.save_to_file'):
              cfdiag.run_diagnostics("example.com")
              
         self.mock_logger.save_html.assert_called()

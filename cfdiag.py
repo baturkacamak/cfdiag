@@ -34,7 +34,7 @@ from typing import List, Tuple, Dict, Optional, Any, Union
 
 # --- Configuration & Constants ---
 
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -163,14 +163,14 @@ h1 {{ color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; }}
             for step in steps:
                 if isinstance(step, dict):
                     html += f"""
-                    <div class="step">
-                        <div class="step-header status-{step.get('status', 'INFO')}">
-                            <span>{step.get('title', '')}</span>
-                            <span>[{step.get('status', '')}]</span>
-                        </div>
-                        <div class="step-content">{step.get('details', '')}</div>
-                    </div>
-                    """
+<div class="step">
+<div class="step-header status-{step.get('status', 'INFO')}">
+<span>{step.get('title', '')}</span>
+<span>[{step.get('status', '')}]</span>
+</div>
+<div class="step-content">{step.get('details', '')}</div>
+</div>
+"""
         
         html += "<div class='summary'><h2>Summary</h2><ul>"
         summary = self.html_data.get("summary", [])
@@ -418,7 +418,63 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     
     status_str = "PASS" if 200<=status<400 else "FAIL"
     if logger: logger.add_html_step("HTTP", status_str, f"Status: {status}\nMetrics: {metrics}")
+    
+    # Feature 1: Cache Analysis
+    step_cache_headers(output)
+    
     return ("SUCCESS" if 200<=status<400 else "FAIL"), status, False, metrics
+
+def step_cache_headers(http_output: str) -> None:
+    # Analyzes headers for Cache status
+    headers = {}
+    for line in http_output.splitlines():
+        if ':' in line:
+            k, v = line.split(':', 1)
+            headers[k.lower().strip()] = v.strip()
+    
+    cache_status = headers.get('cf-cache-status', 'MISSING')
+    server = headers.get('server', '').lower()
+    
+    if 'cloudflare' in server:
+        if cache_status in ['HIT', 'DYNAMIC', 'BYPASS', 'EXPIRED', 'MISS']:
+            print_info(f"Cache Status: {Colors.WHITE}{cache_status}{Colors.ENDC}")
+        elif cache_status == 'MISSING':
+            print_warning("Cloudflare active but 'cf-cache-status' header missing.")
+        
+        if logger: logger.add_html_step("Cache Analysis", "INFO", f"Status: {cache_status}")
+
+def step_security_headers(domain: str) -> None:
+    print_subheader("7.5. Security Header Audit")
+    cmd = f"curl -I --connect-timeout 5 https://{domain}"
+    code, output = run_command(cmd, show_output=False, log_output_to_file=True)
+    
+    headers = {}
+    if code == 0:
+        for line in output.splitlines():
+            if ':' in line:
+                k, v = line.split(':', 1)
+                headers[k.lower().strip()] = v.strip()
+    
+    checks = {
+        'strict-transport-security': 'HSTS',
+        'content-security-policy': 'CSP',
+        'x-frame-options': 'X-Frame',
+        'x-content-type-options': 'NoSniff',
+        'referrer-policy': 'Referrer'
+    }
+    
+    details = ""
+    passed = 0
+    for header, name in checks.items():
+        if header in headers:
+            print_success(f"{name}: Found")
+            details += f"{name}: PASS\n"
+            passed += 1
+        else:
+            print_warning(f"{name}: Missing")
+            details += f"{name}: MISSING\n"
+            
+    if logger: logger.add_html_step("Security Headers", f"{passed}/{len(checks)}", details)
 
 def step_http3_udp(domain: str) -> bool:
     print_subheader("8. HTTP/3 (QUIC) Check")
@@ -471,9 +527,11 @@ def step_traceroute(domain: str) -> None:
 def step_cf_trace(domain: str) -> Tuple[bool, Dict[str, str]]:
     print_subheader("13. CF Trace")
     c, out = run_command(f"curl -s --connect-timeout 5 https://{domain}/cdn-cgi/trace", log_output_to_file=True)
-    if c == 0: 
-        if logger: logger.add_html_step("CF Trace", "PASS", out)
-        return True, {}
+    if c == 0 and "colo=" in out:
+        d = dict(l.split('=', 1) for l in out.splitlines() if '=' in l)
+        print_success(f"Edge: {Colors.WHITE}{d.get('colo')} / {d.get('ip')}{Colors.ENDC}")
+        return True, d
+    print_warning("No CF trace found.")
     return False, {}
 
 def step_cf_forced(domain: str) -> bool:
@@ -511,6 +569,7 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     step_domain_status(domain)
     
     http_res = step_http(domain)
+    step_security_headers(domain) # Feature 2
     step_http3_udp(domain)
     ssl_ok = step_ssl(domain)
     tcp_ok = step_tcp(domain)
