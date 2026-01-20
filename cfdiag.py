@@ -43,7 +43,7 @@ from typing import List, Tuple, Dict, Optional, Any, Union
 
 # --- Configuration & Constants ---
 
-VERSION = "2.12.1"
+VERSION = "2.13.0"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"

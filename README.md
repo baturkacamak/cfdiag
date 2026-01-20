@@ -28,26 +28,33 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 *   **IP Version Forcing:** Force IPv4 (`--ipv4`) or IPv6 (`--ipv6`) to isolate stack issues.
 *   **Metrics Export:** Generates Prometheus-compatible metrics (`metrics.prom`) for monitoring integration.
 *   **History & Trending:** Automatically compares latency (TTFB) with the previous run to detect performance degradation.
+*   **JSON Output:** Output full results as JSON for automation (`--json`).
+*   **Shell Completion:** Generate auto-completion scripts (`--completion bash`).
 
 ## Installation
 
-### Option 1: Standalone Binary (Recommended)
+### Option 1: Standalone Binary (Recommended for Windows/Linux)
 Download the latest single-file executable for your OS from the [Releases Page](https://github.com/baturkacamak/cfdiag/releases). No Python installation required.
 
-### Option 2: Pip (Python Package)
+### Option 2: Homebrew (macOS/Linux)
+```bash
+brew install baturkacamak/cfdiag/cfdiag
+```
+
+### Option 3: Pip (Python Package)
 ```bash
 pip install . 
 # (Once published to PyPI: pip install cfdiag)
 ```
 
-### Option 3: Source
+### Option 4: Source
 ```bash
 git clone git@github.com:baturkacamak/cfdiag.git
 cd cfdiag
 python3 cfdiag.py example.com
 ```
 
-### Option 4: Docker
+### Option 5: Docker
 ```bash
 docker build -t cfdiag .
 docker run --rm cfdiag example.com
@@ -83,6 +90,12 @@ cfdiag --file domains.txt --threads 20
 See what changed between yesterday and today:
 ```bash
 cfdiag --diff reports/example.com/2026-01-19.txt reports/example.com/2026-01-20.txt
+```
+
+### Automation
+Pipe JSON output to jq:
+```bash
+cfdiag example.com --json | jq .details.http_metrics.ttfb
 ```
 
 ## License
