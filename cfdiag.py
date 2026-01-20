@@ -9,7 +9,7 @@ It orchestrates native system tools and Python libraries to gather
 diagnostics and presents a structured, actionable summary.
 
 Usage:
-    python3 cfdiag.py <domain> [--origin <ip>]
+    python3 cfdiag.py <domain> [--origin <ip>] [--update]
 
 Author: Gemini Agent
 """
@@ -27,12 +27,14 @@ import json
 import socket
 import ssl
 import time
+import urllib.request
 
 # --- Configuration & Constants ---
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
+REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
 
 # Cloudflare compatible ports
 CF_PORTS = [8443, 2053, 2083, 2087, 2096] # HTTPS ports
@@ -68,13 +70,13 @@ if os.name == 'nt':
         k = windll.kernel32
         k.SetConsoleMode(k.GetStdHandle(-11), 7)
     except:
-        pass # older windows might fail, colors will just be raw or we disable them via args
+        pass 
 
 class FileLogger:
     """Handles printing to stdout and buffering for clean file output."""
     def __init__(self):
         self.file_buffer = []
-        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|[0-9A-FF]|[0-?]*[ -/]*[@-~])')
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|[\[0-?]*[ -/]*[@-~])')
 
     def log_console(self, msg="", end="\n", flush=False):
         """Prints directly to console only."""
@@ -150,14 +152,12 @@ def check_dependencies():
     """Checks for curl, ping, traceroute equivalent."""
     missing = []
     
-    # Check curl
     if not shutil.which("curl"):
         missing.append("curl")
     
-    # Check traceroute/tracert
     trace_cmd = "tracert" if os.name == 'nt' else "traceroute"
     if not shutil.which(trace_cmd):
-        if os.name != 'nt': # try fallback to /usr/sbin
+        if os.name != 'nt': 
              if not os.path.exists("/usr/sbin/traceroute"):
                  missing.append("traceroute")
     
@@ -211,26 +211,85 @@ def run_command(command, timeout=30, show_output=True, log_output_to_file=True):
         logger.log_file(f"[ERROR] {e}")
         return -1, str(e)
 
-# --- Diagnostic Steps (Cross-Platform) ---
+# --- Feature: Self Update ---
+
+def self_update():
+    print_info(f"Checking for updates (Current: {VERSION})...")
+    try:
+        with urllib.request.urlopen(REPO_URL, timeout=5) as response:
+            if response.status != 200:
+                print_fail("Could not check for updates (HTTP Error).")
+                return
+
+            new_code = response.read().decode('utf-8')
+            
+            # Simple regex to find version
+            match = re.search(r'VERSION = "([\d\.]+)"', new_code)
+            if match:
+                new_version = match.group(1)
+                if new_version > VERSION:
+                    print_success(f"New version found: {new_version}")
+                    try:
+                        with open(sys.argv[0], 'w', encoding='utf-8') as f:
+                            f.write(new_code)
+                        print_success("Update successful! Please run the tool again.")
+                        sys.exit(0)
+                    except Exception as e:
+                        print_fail(f"Could not overwrite file: {e}")
+                        sys.exit(1)
+                else:
+                    print_success("You are already running the latest version.")
+            else:
+                print_warning("Could not parse version from remote file.")
+    except Exception as e:
+        print_fail(f"Update failed: {e}")
+
+# --- Diagnostic Steps ---
 
 def step_dns(domain):
-    print_subheader("1. DNS Resolution & ASN/ISP Check")
+    print_subheader("1. DNS Resolution & ASN/ISP Check (IPv4/IPv6)")
     
-    # Use native Python DNS first (Platform Independent)
-    print_cmd(f"socket.gethostbyname_ex('{domain}')")
+    ips = []
+    ipv4 = []
+    ipv6 = []
+    
+    print_cmd(f"socket.getaddrinfo('{domain}', 443)")
     try:
-        _, _, ips = socket.gethostbyname_ex(domain)
-        # Log this "command" output manually since we aren't using run_command
+        # Fetch both IPv4 and IPv6
+        info = socket.getaddrinfo(domain, 443, proto=socket.IPPROTO_TCP)
+        for _, _, _, _, sockaddr in info:
+            ip = sockaddr[0]
+            if ip not in ips:
+                ips.append(ip)
+                if ':' in ip:
+                    ipv6.append(ip)
+                else:
+                    ipv4.append(ip)
+        
+        # Log to file
         logger.log_file("Output:")
-        logger.log_file(f"    Resolved IPs: {', '.join(ips)}")
+        logger.log_file(f"    IPv4: {', '.join(ipv4)}")
+        logger.log_file(f"    IPv6: {', '.join(ipv6)}")
         
-        print_success(f"DNS Resolved to: {Colors.WHITE}{', '.join(ips)}{Colors.ENDC}")
+        if ipv4:
+            print_success(f"IPv4 Resolved: {Colors.WHITE}{', '.join(ipv4)}{Colors.ENDC}")
+        else:
+            print_warning("No IPv4 records found.")
+            
+        if ipv6:
+            print_success(f"IPv6 Resolved: {Colors.WHITE}{', '.join(ipv6)}{Colors.ENDC}")
+        else:
+            print_info("No IPv6 records found.")
         
-        # ISP/ASN Check using curl (Feature 2)
-        if ips:
-            target_ip = ips[0]
-            # Simple check to skip private IPs
-            if not target_ip.startswith("192.168.") and not target_ip.startswith("10.") and not target_ip.startswith("127."):
+        if not ips:
+            print_fail("DNS returned empty result.")
+            return False, [], []
+
+        # ISP/ASN Check
+        target_ip = ipv4[0] if ipv4 else (ipv6[0] if ipv6 else None)
+        if target_ip:
+             # Skip private
+             if not target_ip.startswith("192.168.") and not target_ip.startswith("10.") and not target_ip.startswith("127.") and not target_ip.startswith("::1"):
                 cmd_asn = f"curl -s --connect-timeout 3 http://ip-api.com/json/{target_ip}"
                 print_info(f"Identifying ISP for {target_ip}...")
                 c2, out2 = run_command(cmd_asn, show_output=False, log_output_to_file=True)
@@ -242,94 +301,57 @@ def step_dns(domain):
                         country = data.get("country", "Unknown")
                         print_success(f"Host: {Colors.WHITE}{isp} ({org}) - {country}{Colors.ENDC}")
                     except json.JSONDecodeError:
-                        print_warning("Could not parse ISP information.")
-        return True, ips
+                        pass
+
+        return True, ipv4, ipv6
 
     except socket.gaierror as e:
         logger.log_file(f"    Error: {e}")
         print_fail(f"DNS resolution failed: {e}")
-        return False, []
+        return False, [], []
 
-def step_dns_compare(domain):
-    print_subheader("2. DNS Resolver Comparison (Local vs Public)")
+def step_domain_status(domain):
+    print_subheader("2. Domain Registration Status (RDAP)")
+    # Using rdap.org as a redirector/aggregator
+    cmd = f"curl -s --connect-timeout 5 https://rdap.org/domain/{domain}"
+    print_cmd(cmd)
     
-    resolvers = [
-        ("Google (8.8.8.8)", "8.8.8.8"),
-        ("Cloudflare (1.1.1.1)", "1.1.1.1")
-    ]
+    code, output = run_command(cmd, show_output=False, log_output_to_file=True)
     
-    all_match = True
-    local_ips = []
-    
-    try:
-        _, _, local_ips = socket.gethostbyname_ex(domain)
-        local_ips.sort()
-    except:
-        pass # Local failed, handled in step 1
-
-    for name, ip in resolvers:
-        # We need a CLI tool for this. 'dig' is best, 'nslookup' is universal fallback.
-        cmd = ""
-        is_windows = os.name == 'nt'
-        
-        if shutil.which("dig"):
-            cmd = f"dig @{ip} {domain} +short"
-        elif is_windows:
-            cmd = f"nslookup {domain} {ip}"
-        else:
-            print_warning(f"Skipping {name}: 'dig' not found and not on Windows.")
-            continue
-
-        print_cmd(cmd)
-        code, output = run_command(cmd, log_output_to_file=True)
-        
-        public_ips = []
-        if code == 0:
-            if shutil.which("dig"):
-                public_ips = [l.strip() for l in output.splitlines() if l.strip() and not l.startswith(';')]
-            else: # nslookup parsing
-                # Windows nslookup output is verbose. We look for lines after "Name:"
-                capture = False
-                for line in output.splitlines():
-                    line = line.strip()
-                    if line.startswith("Address:"):
-                        # Extract IP
-                        parts = line.split()
-                        if len(parts) > 1:
-                            public_ips.append(parts[1])
-                    elif line.startswith("Addresses:"):
-                        capture = True
-                        parts = line.split()
-                        if len(parts) > 1:
-                            public_ips.append(parts[1])
-                    elif capture and line and not line.startswith("Aliases:"):
-                         # Continuation of IPs
-                         public_ips.append(line)
+    if code == 0:
+        try:
+            data = json.loads(output)
+            # RDAP structure varies, but 'status' and 'events' are common
+            statuses = data.get("status", [])
+            if not statuses and "err" in data: # RDAP error
+                 print_warning("RDAP query returned error (Domain might be private or TLD not supported).")
+                 return
             
-            public_ips.sort()
+            # Filter statuses
+            formatted_statuses = [s for s in statuses if "transfer" not in s] # remove transfer prohibitions clutter
+            if formatted_statuses:
+                print_success(f"Domain Status: {Colors.WHITE}{', '.join(formatted_statuses)}{Colors.ENDC}")
             
-            # Simple intersection check (Cloudflare returns many IPs, might rotate)
-            # If we got ANY valid IP, we consider it a resolve success. 
-            # Exact matching logic is tricky with Anycast.
-            if public_ips:
-                if set(public_ips) == set(local_ips):
-                    print_success(f"{name} matches local resolver.")
-                else:
-                    # It's common for them to differ in Anycast, so just WARN or INFO
-                    # If local matches public, great. If not, it's just "Different".
-                    print_info(f"{name} resolved to: {', '.join(public_ips)}")
+            # Check expiration
+            events = data.get("events", [])
+            expiry = None
+            for event in events:
+                if event.get("eventAction") == "expiration":
+                    expiry = event.get("eventDate")
+                    break
+            
+            if expiry:
+                print_success(f"Expiration Date: {Colors.WHITE}{expiry}{Colors.ENDC}")
             else:
-                print_fail(f"{name} failed to resolve or output parse error.")
-                all_match = False
-        else:
-            print_fail(f"{name} failed to resolve.")
-            all_match = False
-            
-    return all_match
+                print_info("Expiration date not found in RDAP response.")
+                
+        except json.JSONDecodeError:
+            print_warning("Could not parse RDAP/Whois data.")
+    else:
+        print_warning("Failed to fetch domain registration info.")
 
 def step_http(domain):
     print_subheader("3. HTTP/HTTPS Availability & WAF Check")
-    # Using curl is still best for protocol specific checks
     cmd = f"curl -I --connect-timeout 10 https://{domain}"
     print_cmd(cmd)
     
@@ -349,7 +371,6 @@ def step_http(domain):
                 except ValueError:
                     pass
             
-            # WAF/Challenge Logic
             if status_code in [403, 503]:
                 print_warning(f"Status {status_code} detected. Checking for Cloudflare WAF/Challenge...")
                 cmd_body = f"curl -s -A 'Mozilla/5.0' --connect-timeout 5 https://{domain}"
@@ -369,7 +390,7 @@ def step_http(domain):
                     print_warning(f"Client Error received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
                     return "CLIENT_ERROR", status_code, False
             elif status_code >= 500:
-                if waf_detected: # 503 is common for "Under Attack Mode"
+                if waf_detected:
                     return "WAF_BLOCK", status_code, True
                 else:
                     print_fail(f"Server Error received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
@@ -380,7 +401,7 @@ def step_http(domain):
         else:
             print_warning("Connection successful, but no HTTP status header found.")
             return "WEIRD", 0, False
-    elif code == 28: # curl timeout
+    elif code == 28:
         print_fail("Connection timed out (Likely 522 cause).")
         return "TIMEOUT", 0, False
     else:
@@ -391,13 +412,11 @@ def step_ssl(domain):
     print_subheader("4. SSL/TLS Certificate Check")
     print_cmd(f"ssl.get_server_certificate(({domain}, 443))")
     
-    # Use native Python SSL
     context = ssl.create_default_context()
     try:
         with socket.create_connection((domain, 443), timeout=5) as sock:
             with context.wrap_socket(sock, server_hostname=domain) as ssock:
                 cert = ssock.getpeercert()
-                # cert is a dict
                 not_after = cert.get('notAfter')
                 if not_after:
                     print_success(f"Certificate Expiry: {Colors.WHITE}{not_after}{Colors.ENDC}")
@@ -417,6 +436,11 @@ def step_tcp(domain, port=443):
     
     print_cmd(f"socket.connect(({domain}, {port}))")
     
+    # We should try to connect to resolved IPs (dual stack check)
+    # But socket.create_connection does this automatically (tries v6 then v4 or vice versa)
+    # To be explicit for diagnostics, we might want to know WHICH one failed, 
+    # but for a general "is it up" check, create_connection is best.
+    
     try:
         with socket.create_connection((domain, port), timeout=5):
             print_success(f"TCP connection to port {port} established.")
@@ -434,8 +458,7 @@ def step_alt_ports(domain):
     
     open_ports = []
     for port in CF_PORTS:
-        if step_tcp(domain, port=port): # Reuse the silent python socket check logic essentially
-            # step_tcp prints success, which is what we want
+        if step_tcp(domain, port=port): 
             open_ports.append(port)
             
     if open_ports:
@@ -465,7 +488,7 @@ def step_mtu(domain):
     print_cmd(cmd)
     code, output = run_command(cmd, log_output_to_file=True)
     
-    if code == 0 and "0% loss" in output: # Windows output parsing needs care, but usually 0 exit code is success
+    if code == 0:
         print_success("Packet size 1472 (standard MTU) passed.")
         return True
     else:
@@ -483,7 +506,7 @@ def step_traceroute(domain):
     
     cmd = ""
     if os.name == 'nt':
-        cmd = f"tracert -h 15 {domain}" # -h max_hops
+        cmd = f"tracert -h 15 {domain}" 
     else:
         cmd = f"traceroute -m 15 -w 2 {domain}"
         
@@ -527,7 +550,6 @@ def step_cf_forced(domain):
     print_subheader("10. Cloudflare Forced Resolution Test")
     print_info("Attempting to connect via Cloudflare DNS resolver (1.1.1.1) to test edge reachability.")
     
-    # We use -k (insecure)
     cmd = f"curl -I -k --resolve {domain}:443:1.1.1.1 https://{domain}"
     print_cmd(cmd)
     
@@ -592,12 +614,19 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
     conclusions = []
     
     # DNS Analysis
-    if not dns_res[0]:
+    dns_ok, ipv4, ipv6 = dns_res
+    if not dns_ok:
         conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} DNS Resolution failed.",
                             "[CRITICAL] DNS Resolution failed."))
     else:
         conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} DNS is resolving correctly.",
                             "[PASS] DNS is resolving correctly."))
+        if ipv6:
+             conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} IPv6 connectivity is available.",
+                                 "[PASS] IPv6 connectivity is available."))
+        else:
+             conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[INFO]{Colors.ENDC} No IPv6 records found (IPv4 only).",
+                                 "[INFO] No IPv6 records found (IPv4 only)."))
 
     # SSL
     if ssl_res:
@@ -677,10 +706,6 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
     if cf_res or cf_trace_res[0]:
         conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Cloudflare Edge Network is reachable.",
                             "[PASS] Cloudflare Edge Network is reachable."))
-        if cf_trace_res[0]:
-            colo = cf_trace_res[1].get('colo', 'N/A')
-            conclusions.append((f"  -> Connected to Data Center: {Colors.WHITE}{colo}{Colors.ENDC}",
-                                f"  -> Connected to Data Center: {colo}"))
 
     for console_msg, file_msg in conclusions:
         logger.log(console_msg, file_msg=file_msg)
@@ -697,12 +722,21 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
 
 def main():
     parser = argparse.ArgumentParser(description="Cloudflare & Connectivity Diagnostic Tool")
-    parser.add_argument("domain", help="The target domain to diagnose (e.g., example.com)")
+    parser.add_argument("domain", help="The target domain to diagnose (e.g., example.com)", nargs='?')
     parser.add_argument("--origin", help="Optional: Origin Server IP to test direct connectivity (Bypass Cloudflare)", default=None)
     parser.add_argument("--no-color", action="store_true", help="Disable colored output")
     parser.add_argument("--version", action="version", version=f"cfdiag {VERSION}")
+    parser.add_argument("--update", action="store_true", help="Update the tool to the latest version")
     
     args = parser.parse_args()
+    
+    if args.update:
+        self_update()
+        return
+
+    if not args.domain:
+        parser.print_help()
+        sys.exit(1)
     
     if args.no_color:
         Colors.disable()
@@ -734,8 +768,10 @@ def main():
     logger.log_file(f"Version:       {VERSION}")
     
     # Steps
-    dns_ok, dns_ips = step_dns(target_domain)
-    step_dns_compare(target_domain)
+    dns_ok, ipv4, ipv6 = step_dns(target_domain)
+    step_domain_status(target_domain) # Feature 2: Domain Status
+    # step_dns_compare(target_domain) # Disabling compare if we have comprehensive DNS step
+    
     http_result = step_http(target_domain)
     ssl_ok = step_ssl(target_domain)
     tcp_ok = step_tcp(target_domain)
@@ -753,7 +789,7 @@ def main():
     if args.origin:
         origin_res = step_origin_connect(target_domain, args.origin)
     
-    generate_summary(target_domain, (dns_ok, dns_ips), http_result, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res, alt_ports_res)
+    generate_summary(target_domain, (dns_ok, ipv4, ipv6), http_result, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res, alt_ports_res)
     
     if logger.save_to_file(log_filename):
         print(f"\n{Colors.OKBLUE}📄 Report saved to: {Colors.BOLD}{log_filename}{Colors.ENDC}")

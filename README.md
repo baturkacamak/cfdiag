@@ -7,7 +7,8 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 ## Features
 
 ### Core Diagnostics
-*   **DNS Analysis:** Verifies resolution and compares local results vs. Google (8.8.8.8) and Cloudflare (1.1.1.1) to detect propagation issues.
+*   **Dual-Stack DNS Analysis:** Verifies both **IPv4** (A) and **IPv6** (AAAA) resolution.
+*   **Domain Registration Status:** Checks RDAP data to see if the domain is active, suspended, or expired.
 *   **ISP/ASN Detection:** Automatically identifies the hosting provider (e.g., AWS, DigitalOcean) of the resolved IP.
 *   **HTTP Inspection:** Smarter than just `ping`. Detects specific HTTP error codes (522, 525, 502) and analyzes headers.
 *   **SSL/TLS Handshake:** Verifies certificate validity and expiration dates using native Python SSL libraries.
@@ -20,9 +21,9 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 *   **Cloudflare Trace:** Fetches debug data (`/cdn-cgi/trace`) to identify the specific Cloudflare Data Center (`Colo`) and connection status.
 *   **Alternative Port Scan:** If port 443 is blocked, it automatically scans valid Cloudflare alternative ports (2053, 8443, 2083, etc.) to find a workaround.
 
-### Reporting
-*   **Console Output:** Beautiful, colored, human-readable output (ANSI colors supported on Windows 10+).
-*   **File Reports:** Automatically saves a clean, Markdown-formatted report to `reports/domain_timestamp.txt` for easy sharing with support teams.
+### Utilities
+*   **Self-Update:** Run with `--update` to automatically pull the latest version from GitHub.
+*   **Reporting:** Beautiful console output and clean Markdown file logs in `reports/`.
 
 ## Installation
 
@@ -63,19 +64,9 @@ If you know your server's real IP address, use the `--origin` flag. This allows 
 *   BUT `cfdiag` to `--origin` **SUCCEEDS**...
 *   **Conclusion:** Your server is UP, but your firewall is blocking Cloudflare's IPs. Whitelist them!
 
-## Output Example
-
-```text
-DIAGNOSTIC SUMMARY
-------------------------------
-[PASS] DNS is resolving correctly.
-[PASS] SSL Certificate is valid.
-[PASS] TCP (Port 443) is open.
-[PASS] Network path supports standard MTU (1500).
-[CRITICAL] Server returned Error (Code 522).
-[ALERT] Cloudflare 522: Connection Timed Out to Origin.
-[PASS] Cloudflare Edge Network is reachable.
-  -> Connected to Data Center: MAD
+### Update Tool
+```bash
+./cfdiag --update
 ```
 
 ## License
