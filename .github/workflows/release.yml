@@ -21,7 +21,7 @@ jobs:
             asset_name: cfdiag-linux-amd64
           - os: windows-latest
             artifact_name: cfdiag.exe
-            asset_name: cfdiag-windows-amd64.exe
+            asset_name: cfdiag-windows-amd64
           - os: macos-latest
             artifact_name: cfdiag
             asset_name: cfdiag-macos-amd64
