@@ -89,11 +89,20 @@ If you know your server's real IP address, use the `--origin` flag. This allows 
 
 If you want to contribute or modify the tool:
 
-1.  **Run Tests:** Always run the test suite before committing.
+1.  **Setup:** Run this once to install the git hooks.
     ```bash
-    ./pre-commit.sh
-    # or
-    python3 test_cfdiag.py
+    ./setup_dev.sh
+    ```
+
+2.  **Workflow:** The tests will now run automatically when you commit.
+    ```bash
+    git commit -m "My change"
+    # Tests run... if pass, commit succeeds.
+    ```
+
+3.  **Manual Test:** You can also run tests manually:
+    ```bash
+    ./scripts/run_tests.sh
     ```
 
 ## License
