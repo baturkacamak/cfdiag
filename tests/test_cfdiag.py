@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import unittest
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch, MagicMock, mock_open, call
 import sys
 import io
 import os
@@ -68,8 +68,6 @@ class TestReporting(unittest.TestCase):
         with patch('builtins.open', mock_open()) as m:
             self.logger.save_html("out.html")
             handle = m()
-            # Join calls to check content
-            # write is called with joined string
             args = handle.write.call_args[0][0]
             self.assertIn("DNS", args)
             self.assertIn("PASS", args)
@@ -98,9 +96,7 @@ class TestReporting(unittest.TestCase):
 
 class TestNetwork(unittest.TestCase):
     def setUp(self):
-        # Reset context
         cfdiag.utils.set_context({})
-        # Mock logger
         self.log_patcher = patch('cfdiag.network.get_logger')
         self.mock_get_logger = self.log_patcher.start()
         self.mock_logger = MagicMock()
@@ -128,7 +124,6 @@ class TestNetwork(unittest.TestCase):
 
     @patch('cfdiag.network.run_command')
     def test_step_http_success(self, mock_run):
-        # Mock curl output format
         output = """HTTP/2 200
 server: cloudflare
 cf-cache-status: HIT
@@ -141,28 +136,14 @@ code=200;;connect=0.1;;start=0.2;;total=0.3"""
 
     @patch('cfdiag.network.run_command')
     def test_step_redirects_loop(self, mock_run):
-        # Mock infinite loop
         mock_run.return_value = (0, "http://loop.com")
         cfdiag.network.step_redirects("example.com")
-        # Assert log added
         self.mock_logger.add_html_step.assert_called()
 
     @patch('cfdiag.network.run_command')
     def test_step_waf_evasion(self, mock_run):
-        # Return 403 for Curl (default ua), 200 for others
-        # We need side_effect for multiple calls
-        # 3 calls: Chrome, Bot, Empty
-        mock_run.side_effect = [
-            (0, "200"), # Chrome
-            (0, "403"), # Bot
-            (0, "200")  # Empty
-        ]
+        mock_run.side_effect = [(0, "200"), (0, "403"), (0, "200")]
         cfdiag.network.step_waf_evasion("example.com")
-        # Assert warning printed or log
-        # We can't easily check print output here without capturing stdout globally, 
-        # but we can check if logger was used.
-        # Verify log called with warning about Bot
-        # self.mock_logger.log.assert_called_with(..., force=True) is hard to match exact string
         self.mock_logger.add_html_step.assert_called()
 
     @patch('cfdiag.network.run_command')
@@ -187,9 +168,64 @@ code=200;;connect=0.1;;start=0.2;;total=0.3"""
             cfdiag.network.step_ssl("example.com")
             self.assertEqual(mock_ctx.keylog_filename, 'test.log')
 
+class TestEdgeCases(unittest.TestCase):
+    def setUp(self):
+        cfdiag.utils.set_context({})
+        self.log_patcher = patch('cfdiag.network.get_logger')
+        self.mock_get_logger = self.log_patcher.start()
+        self.mock_logger = MagicMock()
+        self.mock_get_logger.return_value = self.mock_logger
+
+    def tearDown(self):
+        self.log_patcher.stop()
+
+    @patch('cfdiag.network.socket.getaddrinfo')
+    def test_dns_nxdomain(self, mock_gai):
+        mock_gai.side_effect = socket.gaierror("Name or service not known")
+        ok, v4, v6 = cfdiag.network.step_dns("nxdomain.com")
+        self.assertFalse(ok)
+        self.assertEqual(v4, [])
+
+    @patch('cfdiag.network.run_command')
+    def test_http_522_timeout(self, mock_run):
+        output = "code=522;;connect=10;;start=10;;total=10"
+        mock_run.return_value = (0, output)
+        res, code, waf, metrics = cfdiag.network.step_http("timeout.com")
+        self.assertEqual(code, 522)
+        self.assertEqual(res, "FAIL")
+
+    @patch('cfdiag.network.run_command')
+    def test_http_403_waf(self, mock_run):
+        output = "code=403;;connect=0.1;;start=0.1;;total=0.1"
+        mock_run.return_value = (0, output)
+        res, code, waf, metrics = cfdiag.network.step_http("waf.com")
+        self.assertEqual(code, 403)
+        self.assertEqual(res, "FAIL")
+
+    @patch('cfdiag.network.socket.create_connection')
+    def test_tcp_timeout(self, mock_conn):
+        mock_conn.side_effect = socket.timeout("timed out")
+        ok = cfdiag.network.step_tcp("timeout.com")
+        self.assertFalse(ok)
+        self.mock_logger.add_html_step.assert_called()
+        args = self.mock_logger.add_html_step.call_args[0]
+        self.assertEqual(args[1], "FAIL")
+
+    @patch('cfdiag.network.socket.create_connection')
+    def test_ssl_handshake_fail(self, mock_conn):
+        mock_sock = MagicMock()
+        mock_conn.return_value.__enter__.return_value = mock_sock
+        
+        with patch('ssl.create_default_context') as mock_ctx_ctor:
+            mock_ctx = MagicMock()
+            mock_ctx.wrap_socket.side_effect = ssl.SSLError("Handshake failed")
+            mock_ctx_ctor.return_value = mock_ctx
+            
+            ok = cfdiag.network.step_ssl("badssl.com")
+            self.assertFalse(ok)
+
 class TestCoreCLI(unittest.TestCase):
     def setUp(self):
-        # Patch all network steps to avoid real calls
         self.patchers = [
             patch('cfdiag.core.step_dns', return_value=(True, [], [])),
             patch('cfdiag.core.step_http', return_value=("SUCCESS", 200, False, {})),
@@ -210,10 +246,8 @@ class TestCoreCLI(unittest.TestCase):
             cfdiag.core.main()
 
     def test_main_ipv4_ipv6_conflict(self):
-        # argparse prints to stderr and exits
         with patch('sys.argv', ['cfdiag', 'example.com', '--ipv4', '--ipv6']):
             with self.assertRaises(SystemExit):
-                # We need to capture stderr to suppress noise
                 with patch('sys.stderr', io.StringIO()):
                     cfdiag.core.main()
 
@@ -241,7 +275,6 @@ class TestCoreCLI(unittest.TestCase):
                 cfdiag.core.main()
 
     def test_main_speed_and_benchmark(self):
-        # Ensure flags trigger step calls
         with patch('sys.argv', ['cfdiag', 'example.com', '--speed', '--benchmark-dns']):
             with patch('cfdiag.core.step_speed') as mock_speed, \
                  patch('cfdiag.core.step_dns_benchmark') as mock_bench:
