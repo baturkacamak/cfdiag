@@ -9,8 +9,7 @@ It orchestrates native system tools and Python libraries to gather
 diagnostics and presents a structured, actionable summary.
 
 Usage:
-    python3 cfdiag.py <domain> [--origin <ip>] [--update]
-    python3 cfdiag.py --file domains.txt
+    python3 cfdiag.py <domain> [--origin <ip>] [--expect <ns>] [--file <list>]
 
 Author: Gemini Agent
 """
@@ -32,13 +31,22 @@ import urllib.request
 
 # --- Configuration & Constants ---
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
 
 # Cloudflare compatible ports
 CF_PORTS = [8443, 2053, 2083, 2087, 2096]
+
+# Global Resolvers for Propagation Check
+PUBLIC_RESOLVERS = [
+    ("Google", "8.8.8.8"),
+    ("Cloudflare", "1.1.1.1"),
+    ("Quad9", "9.9.9.9"),
+    ("OpenDNS", "208.67.222.222"),
+    ("Level3", "4.2.2.1")
+]
 
 # Colors (ANSI escape codes)
 class Colors:
@@ -102,7 +110,7 @@ class FileLogger:
                 print(f"{Colors.FAIL}Error saving log: {e}{Colors.ENDC}")
             return False
 
-# Global logger instance (initialized in main)
+# Global logger instance
 logger = None
 
 # --- Helper Functions ---
@@ -144,8 +152,6 @@ def check_dependencies():
         if os.name != 'nt': 
              if not os.path.exists("/usr/sbin/traceroute"):
                  missing.append("traceroute")
-    
-    # We need dig for DNSSEC if available, but optional
     
     if missing:
         print(f"Missing required system tools: {', '.join(missing)}")
@@ -233,23 +239,80 @@ def step_dns(domain):
         print_fail(f"DNS resolution failed: {e}")
         return False, [], []
 
+def step_propagation(domain, expected_ns):
+    print_subheader(f"2. Global Propagation Check (Expect: {expected_ns})")
+    
+    if not shutil.which("dig") and os.name != 'nt':
+        print_warning("Propagation check requires 'dig' or 'nslookup'.")
+        return "ERROR"
+
+    total = len(PUBLIC_RESOLVERS)
+    matches = 0
+    failures = 0
+    
+    logger.log_file(f"Target Nameserver Substring: {expected_ns}")
+
+    for name, ip in PUBLIC_RESOLVERS:
+        # Construct command
+        if shutil.which("dig"):
+            cmd = f"dig @{ip} NS {domain} +short"
+        elif os.name == 'nt':
+            cmd = f"nslookup -type=NS {domain} {ip}"
+        else:
+            continue
+
+        c, out = run_command(cmd, show_output=False, log_output_to_file=True)
+        
+        found = False
+        found_records = []
+        
+        if c == 0:
+            if shutil.which("dig"):
+                found_records = [l.strip().strip('.') for l in out.splitlines() if l.strip()]
+            else: # Windows nslookup
+                # Simplified parsing for windows
+                for line in out.splitlines():
+                    if "nameserver =" in line:
+                        found_records.append(line.split("=")[1].strip())
+            
+            # Check match
+            for record in found_records:
+                if expected_ns.lower() in record.lower():
+                    found = True
+                    break
+            
+            if found:
+                matches += 1
+                print_success(f"{name:<10}: {Colors.WHITE}MATCH{Colors.ENDC} ({found_records[0] if found_records else 'OK'})")
+            else:
+                failures += 1
+                res_str = found_records[0] if found_records else "No Records"
+                print_fail(f"{name:<10}: {Colors.FAIL}MISMATCH{Colors.ENDC} (Found: {res_str})")
+        else:
+            print_warning(f"{name:<10}: TIMEOUT/ERROR")
+
+    if matches == total:
+        print_success("Global Propagation Complete (Consensus Reached).")
+        return "MATCH"
+    elif matches == 0:
+        print_fail("Global Propagation Failed (Stuck on Old NS).")
+        return "FAIL"
+    else:
+        print_warning(f"Propagation In Progress ({matches}/{total} Resolvers updated).")
+        return "PARTIAL"
+
 def step_dnssec(domain):
-    print_subheader("2. DNSSEC Validation")
-    # Native python validation is hard without 3rd party libs (dnspython).
-    # We rely on 'dig'. If not available, we skip.
+    print_subheader("3. DNSSEC Validation")
     if not shutil.which("dig"):
-        print_info("Skipping DNSSEC check ('dig' tool not found).")
         return None
 
-    # Check for DS record at parent
-    print_cmd(f"dig DS {domain} +short")
+    # Check for DS record
     c, out = run_command(f"dig DS {domain} +short", log_output_to_file=True)
     if not out.strip():
         print_info("No DS record found. DNSSEC is likely {Colors.BOLD}DISABLED{Colors.ENDC}.")
         return "DISABLED"
     
-    # Check for RRSIG on A record
-    print_cmd(f"dig A {domain} +dnssec +short")
+    # Check for RRSIG
     c, out = run_command(f"dig A {domain} +dnssec +short", log_output_to_file=True)
     
     if "RRSIG" in out:
@@ -260,7 +323,7 @@ def step_dnssec(domain):
         return "BROKEN"
 
 def step_domain_status(domain):
-    print_subheader("3. Domain Registration Status (RDAP)")
+    print_subheader("4. Domain Registration Status (RDAP)")
     code, output = run_command(f"curl -s --connect-timeout 5 https://rdap.org/domain/{domain}", show_output=False, log_output_to_file=True)
     if code == 0:
         try:
@@ -275,7 +338,7 @@ def step_domain_status(domain):
         except: print_warning("Could not parse RDAP data.")
 
 def step_http(domain):
-    print_subheader("4. HTTP/HTTPS Availability & WAF Check")
+    print_subheader("5. HTTP/HTTPS Availability & WAF Check")
     cmd = f"curl -I --connect-timeout 10 https://{domain}"
     print_cmd(cmd)
     code, output = run_command(cmd, log_output_to_file=True)
@@ -310,21 +373,12 @@ def step_http(domain):
     return "ERROR", 0, False
 
 def step_http3_udp(domain):
-    print_subheader("5. HTTP/3 (QUIC) UDP Check")
-    # Check if UDP 443 is blocked outbound.
-    # We can't easily verify the SERVER accepts it without a QUIC client,
-    # but we can check if we can send packets without immediate "Destination Unreachable".
+    print_subheader("6. HTTP/3 (QUIC) UDP Check")
     print_cmd(f"socket.sendto(..., ('{domain}', 443))")
-    
     try:
-        # Create UDP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(2)
-        # Send dummy payload
         sock.sendto(b"PING", (domain, 443))
-        # We don't expect a reply usually (unless server speaks UDP/QUIC and sends a reset or garbage)
-        # But if we get an ICMP unreachable error immediately, it raises an exception on some OSs
-        # or we assume success if no error.
         print_success("UDP Port 443 outbound appears open (HTTP/3 Candidate).")
         return True
     except Exception as e:
@@ -332,7 +386,7 @@ def step_http3_udp(domain):
         return False
 
 def step_ssl(domain):
-    print_subheader("6. SSL/TLS Certificate Check")
+    print_subheader("7. SSL/TLS Certificate Check")
     context = ssl.create_default_context()
     try:
         with socket.create_connection((domain, 443), timeout=5) as sock:
@@ -344,7 +398,7 @@ def step_ssl(domain):
         return False
 
 def step_tcp(domain):
-    print_subheader("7. TCP Connectivity (Port 443)")
+    print_subheader("8. TCP Connectivity (Port 443)")
     try:
         with socket.create_connection((domain, 443), timeout=5):
             print_success("TCP connection established.")
@@ -354,7 +408,7 @@ def step_tcp(domain):
         return False
 
 def step_mtu(domain):
-    print_subheader("8. MTU / Fragmentation Check")
+    print_subheader("9. MTU / Fragmentation Check")
     sys_name = platform.system()
     flags = "-n 1 -f -l" if sys_name == "Windows" else ("-c 1 -D -s" if sys_name == "Darwin" else "-c 1 -M do -s")
     cmd = f"ping {flags} 1472 {domain}"
@@ -367,13 +421,13 @@ def step_mtu(domain):
     return False
 
 def step_traceroute(domain):
-    print_subheader("9. Traceroute")
+    print_subheader("10. Traceroute")
     cmd = f"tracert -h 15 {domain}" if os.name == 'nt' else f"traceroute -m 15 -w 2 {domain}"
     print_info("Tracing...")
     run_command(cmd, timeout=60)
 
 def step_cf_trace(domain):
-    print_subheader("10. Cloudflare Debug Trace")
+    print_subheader("11. Cloudflare Debug Trace")
     c, out = run_command(f"curl -s --connect-timeout 5 https://{domain}/cdn-cgi/trace", log_output_to_file=True)
     if c == 0 and "colo=" in out:
         d = dict(l.split('=', 1) for l in out.splitlines() if '=' in l)
@@ -383,7 +437,7 @@ def step_cf_trace(domain):
     return False, {}
 
 def step_cf_forced(domain):
-    print_subheader("11. Force Resolve (1.1.1.1)")
+    print_subheader("12. Force Resolve (1.1.1.1)")
     c, _ = run_command(f"curl -I -k --resolve {domain}:443:1.1.1.1 https://{domain}", log_output_to_file=True)
     if c == 0: 
         print_success("Connected via 1.1.1.1.")
@@ -392,7 +446,7 @@ def step_cf_forced(domain):
     return False
 
 def step_origin(domain, ip):
-    print_subheader("12. Direct Origin")
+    print_subheader("13. Direct Origin")
     c, out = run_command(f"curl -I -k --connect-timeout 10 --resolve {domain}:443:{ip} https://{domain}", log_output_to_file=True)
     if c == 0:
         print_success("Origin Connected.")
@@ -402,8 +456,7 @@ def step_origin(domain, ip):
 
 # --- Orchestrator ---
 
-def run_diagnostics(domain, origin_ip=None):
-    # This runs all steps for a single domain
+def run_diagnostics(domain, origin_ip=None, expected_ns=None):
     
     # Setup Log File
     reports_dir = "reports"
@@ -416,11 +469,17 @@ def run_diagnostics(domain, origin_ip=None):
 
     # Run Steps
     dns_ok, ipv4, ipv6 = step_dns(domain)
+    
+    # Feature: Propagation Check
+    prop_status = "N/A"
+    if expected_ns:
+        prop_status = step_propagation(domain, expected_ns)
+        
     dnssec_status = step_dnssec(domain)
     step_domain_status(domain)
     
     http_res = step_http(domain)
-    step_http3_udp(domain) # New Feature
+    step_http3_udp(domain)
     
     ssl_ok = step_ssl(domain)
     tcp_ok = step_tcp(domain)
@@ -439,7 +498,7 @@ def run_diagnostics(domain, origin_ip=None):
     # Return summary dict for batch mode
     return {
         "domain": domain,
-        "dns": "OK" if dns_ok else "FAIL",
+        "dns": prop_status if expected_ns else ("OK" if dns_ok else "FAIL"),
         "http": http_res[0],
         "tcp": "OK" if tcp_ok else "FAIL",
         "dnssec": dnssec_status,
@@ -451,7 +510,8 @@ def main():
     
     parser = argparse.ArgumentParser(description="Cloudflare & Connectivity Diagnostic Tool")
     parser.add_argument("domain", help="Domain to diagnose", nargs='?')
-    parser.add_argument("--origin", help="Origin IP for direct test")
+    parser.add_argument("--origin", help="Optional: Origin Server IP to test direct connectivity")
+    parser.add_argument("--expect", help="Optional: Expected Nameserver (e.g. ns1.host.com) to check propagation")
     parser.add_argument("--file", help="Batch mode: file with list of domains")
     parser.add_argument("--no-color", action="store_true")
     parser.add_argument("--version", action="version", version=f"cfdiag {VERSION}")
@@ -474,20 +534,20 @@ def main():
             sys.exit(1)
             
         print(f"\n{Colors.BOLD}{Colors.HEADER}=== BATCH MODE STARTED ==={Colors.ENDC}\n")
-        print(f"{ 'DOMAIN':<30} | {'DNS':<6} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
-        print("-" * 80)
+        # Adjust table headers based on features used
+        dns_header = "PROPAGATION" if args.expect else "DNS"
+        print(f"{ 'DOMAIN':<30} | {dns_header:<12} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
+        print("-" * 85)
         
         with open(args.file, 'r') as f:
             for line in f:
                 d = line.strip()
                 if not d: continue
                 
-                # Use a silent logger for execution, but capture result
                 logger = FileLogger(silent=True)
-                res = run_diagnostics(d)
+                res = run_diagnostics(d, origin_ip=args.origin, expected_ns=args.expect)
                 
-                # Print Row
-                print(f"{res['domain']:<30} | {res['dns']:<6} | {res['http']:<15} | {res['tcp']:<6} | {str(res['dnssec']):<10}")
+                print(f"{res['domain']:<30} | {res['dns']:<12} | {res['http']:<15} | {res['tcp']:<6} | {str(res['dnssec']):<10}")
         
         print(f"\n{Colors.OKGREEN}Batch Complete. Detailed reports in reports/{Colors.ENDC}")
         
@@ -495,7 +555,7 @@ def main():
         # Single Mode
         logger = FileLogger(silent=False)
         target_domain = args.domain.replace("http://", "").replace("https://", "").strip("/")
-        run_diagnostics(target_domain, args.origin)
+        run_diagnostics(target_domain, args.origin, args.expect)
         print(f"\n{Colors.OKBLUE}📄 Report saved.{Colors.ENDC}")
         
     else:

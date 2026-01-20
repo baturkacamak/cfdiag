@@ -8,6 +8,7 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 
 ### Core Diagnostics
 *   **Dual-Stack DNS Analysis:** Verifies both **IPv4** (A) and **IPv6** (AAAA) resolution.
+*   **DNS Propagation Check:** Checks global resolvers (Google, Cloudflare, Quad9, etc.) to see if your Nameserver changes have propagated worldwide.
 *   **DNSSEC Validation:** Checks if the domain's chain of trust is intact or broken.
 *   **Domain Registration Status:** Checks RDAP data to see if the domain is active, suspended, or expired.
 *   **ISP/ASN Detection:** Automatically identifies the hosting provider (e.g., AWS, DigitalOcean) of the resolved IP.
@@ -55,8 +56,14 @@ Run a full diagnostic on a domain:
 ./cfdiag example.com
 ```
 
+### Check DNS Propagation
+Verify if your nameserver change has propagated globally:
+```bash
+./cfdiag example.com --expect ns1.digitalocean.com
+```
+
 ### Batch Mode
-Check multiple domains at once:
+Check multiple domains at once (supports `--expect` too):
 ```bash
 ./cfdiag --file my_domains.txt
 ```
