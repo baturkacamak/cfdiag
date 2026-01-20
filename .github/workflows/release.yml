@@ -40,11 +40,40 @@ jobs:
         run: |
           pyinstaller --onefile --name ${{ matrix.artifact_name }} cfdiag.py
 
+      # Linux DEB Packaging
+      - name: Package DEB (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}" # Remove 'v'
+          mkdir -p deb/cfdiag/usr/local/bin
+          mkdir -p deb/cfdiag/DEBIAN
+          cp dist/cfdiag deb/cfdiag/usr/local/bin/
+          chmod +x deb/cfdiag/usr/local/bin/cfdiag
+          
+          echo "Package: cfdiag" > deb/cfdiag/DEBIAN/control
+          echo "Version: $VERSION" >> deb/cfdiag/DEBIAN/control
+          echo "Section: net" >> deb/cfdiag/DEBIAN/control
+          echo "Priority: optional" >> deb/cfdiag/DEBIAN/control
+          echo "Architecture: amd64" >> deb/cfdiag/DEBIAN/control
+          echo "Maintainer: Batur Kacamak <batur@example.com>" >> deb/cfdiag/DEBIAN/control
+          echo "Description: Professional Cloudflare Diagnostic Tool" >> deb/cfdiag/DEBIAN/control
+          
+          dpkg-deb --build deb/cfdiag
+          mv deb/cfdiag.deb cfdiag_${VERSION}_amd64.deb
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.asset_name }}
           path: dist/${{ matrix.artifact_name }}
+
+      - name: Upload DEB Artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: cfdiag-deb
+          path: "*.deb"
 
   release:
     needs: build
@@ -61,11 +90,13 @@ jobs:
         with:
           tag_name: ${{ github.ref }}
           name: Release ${{ github.ref }}
+          body_path: CHANGELOG.md
           draft: false
           prerelease: false
           files: |
             cfdiag-linux-amd64/cfdiag
             cfdiag-windows-amd64/cfdiag.exe
             cfdiag-macos-amd64/cfdiag
+            cfdiag-deb/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

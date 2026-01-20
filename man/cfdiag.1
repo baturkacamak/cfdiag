@@ -1,0 +1,64 @@
+.TH CFDIAG 1 "January 2026" "v2.12.0" "User Commands"
+.SH NAME
+cfdiag \- Cloudflare & Connectivity Diagnostic Tool
+.SH SYNOPSIS
+.B cfdiag
+[\fIOPTIONS\fR] [\fIDOMAIN\fR]
+.SH DESCRIPTION
+.B cfdiag
+is a professional-grade diagnostic tool designed to identify connectivity issues between a client and a web server, specifically optimized for Cloudflare-protected domains. It performs DNS, TCP, HTTP, and SSL checks, along with advanced diagnostics like direct origin testing, MTU fragmentation checks, and WAF evasion testing.
+.SH OPTIONS
+.TP
+.B \-\-origin \fIIP\fR
+Bypass DNS and Cloudflare to connect directly to the origin server IP. Useful for verifying if the backend is down or if Cloudflare is blocking the connection.
+.TP
+.B \-\-expect \fISUBSTRING\fR
+Check global DNS propagation. Verifies if public resolvers (Google, Quad9, etc.) return a nameserver matching the provided substring.
+.TP
+.B \-\-file \fIFILENAME\fR
+Run in Batch Mode. Read domains from the specified file (one per line) and scan them.
+.TP
+.B \-\-threads \fINUM\fR
+Number of concurrent threads to use in Batch Mode (Default: 5).
+.TP
+.B \-\-ipv4
+Force all checks (DNS, Curl, Traceroute) to use IPv4.
+.TP
+.B \-\-ipv6
+Force all checks to use IPv6.
+.TP
+.B \-\-proxy \fIURL\fR
+Use the specified HTTP/HTTPS proxy for web requests.
+.TP
+.B \-\-json
+Output the full diagnostic result as a JSON object to stdout. Suppresses normal logging.
+.TP
+.B \-\-diff \fIFILE1 FILE2\fR
+Compare two generated text reports and highlight differences in status.
+.TP
+.B \-\-completion \fISHELL\fR
+Generate shell completion script for 'bash' or 'zsh'.
+.TP
+.B \-\-verbose, \-v
+Enable verbose output. Prints full command outputs and details to the console.
+.TP
+.B \-\-metrics
+Generate a Prometheus-compatible metrics file in the report directory.
+.SH EXAMPLES
+.B Scan a domain:
+.br
+    cfdiag example.com
+
+.B Check direct origin:
+.br
+    cfdiag example.com --origin 192.0.2.1
+
+.B Batch scan 100 domains with high concurrency:
+.br
+    cfdiag --file list.txt --threads 50
+
+.B JSON output for scripting:
+.br
+    cfdiag example.com --json | jq .http_metrics.ttfb
+.SH AUTHOR
+Batur Kacamak
