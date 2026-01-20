@@ -1,0 +1,11 @@
+__pycache__
+.git
+.github
+reports
+scripts
+test_cfdiag.py
+setup_dev.sh
+Dockerfile
+README.md
+LICENSE
+.gitignore

@@ -48,6 +48,17 @@ python3 cfdiag.py example.com
 python cfdiag.py example.com
 ```
 
+### Docker
+If you don't want to install dependencies manually, use Docker:
+
+```bash
+# Build
+docker build -t cfdiag .
+
+# Run
+docker run --rm cfdiag example.com
+```
+
 ## Usage
 
 ### Basic Usage
