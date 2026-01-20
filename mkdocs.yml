@@ -1,0 +1,25 @@
+site_name: cfdiag
+site_description: Professional Cloudflare & Connectivity Diagnostic Tool
+site_author: Batur Kacamak
+repo_url: https://github.com/baturkacamak/cfdiag
+repo_name: baturkacamak/cfdiag
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.expand
+    - navigation.sections
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+
+nav:
+  - Home: index.md
+  - Usage: usage.md
+  - Library API: api.md
+  - Changelog: changelog.md
