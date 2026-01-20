@@ -419,6 +419,26 @@ def step_tcp(domain):
         print_fail("TCP connection failed.")
         return False
 
+def step_alt_ports(domain):
+    print_subheader("8.5. Alternative Cloudflare Port Scan")
+    print_info("Scanning other Cloudflare HTTPS ports to find a workaround...")
+    
+    open_ports = []
+    for port in CF_PORTS:
+        # Reuse simple socket connect logic
+        try:
+            with socket.create_connection((domain, port), timeout=2):
+                print_success(f"Port {port}: {Colors.BOLD}OPEN{Colors.ENDC}")
+                open_ports.append(port)
+        except:
+            pass
+            
+    if open_ports:
+        return True, open_ports
+    else:
+        print_warning("No alternative HTTPS ports (8443, 2053, etc.) are open.")
+        return False, []
+
 def step_mtu(domain):
     print_subheader("9. MTU / Fragmentation Check")
     sys_name = platform.system()
@@ -461,7 +481,21 @@ def step_origin(domain, ip):
     print_subheader("13. Direct Origin")
     c, out = run_command(f"curl -I -k --connect-timeout 10 --resolve {domain}:443:{ip} https://{domain}", log_output_to_file=True)
     if c == 0:
-        print_success("Origin Connected.")
+        status_line = next((line for line in out.splitlines() if line.startswith("HTTP/")), None)
+        status_code = 0
+        if status_line:
+            parts = status_line.split()
+            if len(parts) >= 2:
+                try: status_code = int(parts[1])
+                except: pass
+            
+            if 200 <= status_code < 500:
+                print_success(f"Origin Connected (Status: {status_code}).")
+                return True, "SUCCESS"
+            else:
+                 print_fail(f"Origin returned Error: {status_line.strip()}")
+                 return True, "ERROR"
+        print_success("Origin Connected (No Status).")
         return True, "SUCCESS"
     print_fail("Origin Failed.")
     return False, "TIMEOUT" if c == 28 else "ERROR"
