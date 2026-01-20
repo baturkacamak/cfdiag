@@ -1,16 +1,16 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name="cfdiag",
-    version="2.7.0",
+    version="3.0.0",
     description="A professional-grade diagnostic tool for Cloudflare and connectivity issues.",
     author="Batur Kacamak",
     author_email="batur@example.com",
     url="https://github.com/baturkacamak/cfdiag",
-    py_modules=["cfdiag"],
+    packages=find_packages(),
     entry_points={
         "console_scripts": [
-            "cfdiag=cfdiag:main",
+            "cfdiag=cfdiag.core:main",
         ],
     },
     classifiers=[

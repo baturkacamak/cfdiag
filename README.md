@@ -47,11 +47,11 @@ pip install .
 # (Once published to PyPI: pip install cfdiag)
 ```
 
-### Option 4: Source
+### Option 4: Source (Dev)
 ```bash
 git clone git@github.com:baturkacamak/cfdiag.git
 cd cfdiag
-python3 cfdiag.py example.com
+python3 -m cfdiag example.com
 ```
 
 ### Option 5: Docker
