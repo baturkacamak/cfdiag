@@ -12,6 +12,7 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 *   **DNSSEC Validation:** Checks if the domain's chain of trust is intact or broken.
 *   **Domain Registration Status:** Checks RDAP data to see if the domain is active, suspended, or expired.
 *   **ISP/ASN Detection:** Automatically identifies the hosting provider (e.g., AWS, DigitalOcean) of the resolved IP.
+*   **Blacklist/Reputation:** Checks common DNSBLs (Spamhaus, etc.) to see if the IP is flagged.
 *   **HTTP Inspection:** Smarter than just `ping`. Detects specific HTTP error codes (522, 525, 502) and analyzes headers.
 *   **Performance Metrics:** Measures **TTFB** (Time To First Byte) and Connect Time to identify backend slowness vs network lag.
 *   **HTTP/3 (QUIC) Check:** Verifies if UDP Port 443 is open/filtered.
@@ -29,7 +30,10 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 *   **Batch Mode:** Scan a list of domains from a file: `cfdiag --file domains.txt`
 *   **Config File:** Save your preferences (like origin IP) in `~/.cfdiag.json`.
 *   **Self-Update:** Run with `--update` to automatically pull the latest version from GitHub.
-*   **Reporting:** Beautiful console output and clean Markdown file logs in `reports/`.
+*   **Reporting:** 
+    *   Beautiful console output.
+    *   Detailed text logs (`reports/domain.txt`).
+    *   **HTML Reports** (`reports/domain.html`) for easy sharing.
 
 ## Installation
 
