@@ -34,7 +34,7 @@ from typing import List, Tuple, Dict, Optional, Any, Union
 
 # --- Configuration & Constants ---
 
-VERSION = "2.3.2"
+VERSION = "2.4.1"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -221,11 +221,8 @@ def check_dependencies() -> None:
     if not shutil.which("curl"): missing.append("curl")
     
     trace_cmd = "tracert" if os.name == 'nt' else "traceroute"
-    if not shutil.which(trace_cmd):
-        if os.name != 'nt': 
-             if not os.path.exists("/usr/sbin/traceroute"):
-                 missing.append("traceroute")
-    
+    if not shutil.which(trace_cmd) and os.name != 'nt' and not os.path.exists("/usr/sbin/traceroute"):
+         missing.append("traceroute")
     if missing:
         print(f"Missing required system tools: {', '.join(missing)}")
         sys.exit(1)
@@ -310,10 +307,11 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
                 ips.append(ip)
                 (ipv6 if ':' in ip else ipv4).append(ip)
         
-        detail = f"IPv4: {', '.join(ipv4)}\\nIPv6: {', '.join(ipv6)}"
+        detail = f"IPv4: {', '.join(ipv4)}\nIPv6: {', '.join(ipv6)}"
         if ipv4: print_success(f"IPv4 Resolved: {Colors.WHITE}{', '.join(ipv4)}{Colors.ENDC}")
         else: print_warning("No IPv4 records found.")
         if ipv6: print_success(f"IPv6 Resolved: {Colors.WHITE}{', '.join(ipv6)}{Colors.ENDC}")
+        else: print_info("No IPv6 records found.")
         
         target_ip = ipv4[0] if ipv4 else (ipv6[0] if ipv6 else None)
         if target_ip and not target_ip.startswith(("192.168.", "10.", "127.", "::1")):
@@ -323,7 +321,7 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
                     data = json.loads(out2)
                     host_str = f"Host: {data.get('isp')} ({data.get('org')}) - {data.get('country')}"
                     print_success(f"{Colors.WHITE}{host_str}{Colors.ENDC}")
-                    detail += f"\\n{host_str}"
+                    detail += f"\n{host_str}"
                 except: pass
         
         if logger: logger.add_html_step("DNS", "PASS" if ips else "FAIL", detail)
@@ -346,10 +344,10 @@ def step_blacklist(domain: str, ip: str) -> None:
             try:
                 socket.gethostbyname(query)
                 print_fail(f"Listed on {name}!")
-                details += f"Listed on {name}\\n"
+                details += f"Listed on {name}\n"
                 listed = True
             except:
-                details += f"Clean on {name}\\n"
+                details += f"Clean on {name}\n"
         if logger: logger.add_html_step("Blacklist Check", "FAIL" if listed else "PASS", details)
     except Exception as e:
         print_warning(f"Blacklist check failed: {e}")
@@ -375,7 +373,7 @@ def step_propagation(domain: str, expected_ns: str) -> str:
         if found: matches += 1
         res_str = "MATCH" if found else "MISMATCH"
         print_info(f"{name}: {res_str}")
-        details += f"{name}: {res_str}\\n"
+        details += f"{name}: {res_str}\n"
     
     status = "MATCH" if matches == len(PUBLIC_RESOLVERS) else "PARTIAL"
     if logger: logger.add_html_step("Propagation", status, details)
@@ -401,7 +399,7 @@ def step_domain_status(domain: str) -> None:
             statuses = [s for s in data.get("status", []) if "transfer" not in s]
             if statuses: 
                 print_success(f"Status: {', '.join(statuses)}")
-                detail += f"Status: {statuses}\\n"
+                detail += f"Status: {statuses}\n"
             for event in data.get("events", []):
                 if event.get("eventAction") == "expiration":
                     print_success(f"Expires: {event.get('eventDate')}")
@@ -437,7 +435,7 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
             except: pass
     
     status_str = "PASS" if 200<=status<400 else "FAIL"
-    if logger: logger.add_html_step("HTTP", status_str, f"Status: {status}\\nMetrics: {metrics}")
+    if logger: logger.add_html_step("HTTP", status_str, f"Status: {status}\nMetrics: {metrics}")
     
     if 200 <= status < 400:
         print_success(f"Response: {Colors.WHITE}HTTP {status}{Colors.ENDC}")
@@ -456,7 +454,7 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
 
     step_cache_headers(output)
     
-    return ("SUCCESS" if 200<=status<400 else "FAIL"), status, waf, metrics
+    return ("SUCCESS" if 200<=status<400 else "FAIL"), status, False, metrics
 
 def step_cache_headers(http_output: str) -> None:
     headers = {}
@@ -501,11 +499,11 @@ def step_security_headers(domain: str) -> None:
     for header, name in checks.items():
         if header in headers:
             print_success(f"{name}: Found")
-            details += f"{name}: PASS\\n"
+            details += f"{name}: PASS\n"
             passed += 1
         else:
             print_warning(f"{name}: Missing")
-            details += f"{name}: MISSING\\n"
+            details += f"{name}: MISSING\n"
             
     if logger: logger.add_html_step("Security Headers", f"{passed}/{len(checks)}", details)
 
@@ -579,7 +577,7 @@ def step_alt_ports(domain: str) -> Tuple[bool, List[int]]:
     print_subheader("16. Alt Ports")
     return False, []
 
-def generate_summary(domain: str, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res) -> None:
+def generate_summary(domain: str, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res, dnssec_status, prop_status) -> None:
     if not logger: return
     logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}{SEPARATOR}", force=True)
     logger.log_console(f" DIAGNOSTIC SUMMARY: {domain}", force=True)
@@ -594,6 +592,15 @@ def generate_summary(domain: str, dns_res, http_res, tcp_res, cf_res, mtu_res, s
         logger.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} DNS Resolution failed.", file_msg="[CRITICAL] DNS Resolution failed.", force=True)
     else:
         logger.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} DNS is resolving correctly.", file_msg="[PASS] DNS is resolving correctly.", force=True)
+
+    if prop_status != "N/A":
+        if prop_status == "MATCH":
+            logger.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Propagation Complete.", file_msg="[PASS] Propagation Complete.", force=True)
+        else:
+            logger.log(f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} Propagation Issue.", file_msg="[WARN] Propagation Issue.", force=True)
+
+    if dnssec_status == "BROKEN":
+        logger.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} DNSSEC Broken.", file_msg="[CRITICAL] DNSSEC Broken.", force=True)
 
     if ssl_res:
          logger.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} SSL Certificate is valid.", file_msg="[PASS] SSL Certificate is valid.", force=True)
@@ -650,14 +657,15 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
         logger.html_data['domain'] = domain
         logger.html_data['timestamp'] = timestamp
         logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}DIAGNOSING: {domain}{Colors.ENDC}", force=True)
+        logger.log_file(f"# DIAGNOSIS: {domain}\nDate: {timestamp}")
 
     dns_ok, ipv4, ipv6 = step_dns(domain)
     
     if ipv4: step_blacklist(domain, ipv4[0])
     
     step_dns_trace(domain)
-    if expected_ns: step_propagation(domain, expected_ns)
-    step_dnssec(domain)
+    prop_status = step_propagation(domain, expected_ns) if expected_ns else "N/A"
+    dnssec_status = step_dnssec(domain)
     step_domain_status(domain)
     
     http_res = step_http(domain)
@@ -676,7 +684,7 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     origin_res = step_origin(domain, origin_ip) if origin_ip else None
 
     # Generate Text Summary (Console + Log File)
-    generate_summary(domain, (dns_ok, ipv4, ipv6), http_res, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res, alt_ports_res)
+    generate_summary(domain, (dns_ok, ipv4, ipv6), http_res, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res, alt_ports_res, dnssec_status, prop_status)
 
     # Populate HTML Summary
     summary = []
