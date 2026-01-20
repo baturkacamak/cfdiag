@@ -416,22 +416,45 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     code, output = run_command(cmd, log_output_to_file=True)
     
     status = 0
+    waf = False
     metrics: Dict[str, float] = {}
+    
     if code == 0:
-        for l in output.splitlines():
-            if "code=" in l:
-                try:
-                    parts = dict(p.split('=') for p in l.split(';;'))
-                    status = int(parts.get('code', 0)) # type: ignore
-                    metrics = {k: float(v) for k, v in parts.items() if k != 'code'}
-                except: pass
+        lines = output.splitlines()
+        metrics_line = ""
+        for l in reversed(lines):
+            if l.startswith("code="):
+                metrics_line = l
+                break
+        
+        if metrics_line:
+            try:
+                parts = dict(p.split('=') for p in l.split(';;'))
+                status = int(parts.get('code', 0)) # type: ignore
+                metrics = {k: float(v) for k, v in parts.items() if k != 'code'}
+            except: pass
     
     status_str = "PASS" if 200<=status<400 else "FAIL"
     if logger: logger.add_html_step("HTTP", status_str, f"Status: {status}\\nMetrics: {metrics}")
     
+    if 200 <= status < 400:
+        print_success(f"Response: {Colors.WHITE}HTTP {status}{Colors.ENDC}")
+    elif status >= 400:
+        if waf:
+             print_warning(f"WAF/Challenge Blocked (HTTP {status})")
+        elif status < 500:
+             print_warning(f"Client Error: HTTP {status}")
+        else:
+             print_fail(f"Server Error: HTTP {status}")
+
+    if metrics:
+        ttfb_ms = int(metrics.get('ttfb', 0) * 1000)
+        conn_ms = int(metrics.get('connect', 0) * 1000)
+        print_info(f"Latency: Connect={conn_ms}ms, TTFB={ttfb_ms}ms")
+
     step_cache_headers(output)
     
-    return ("SUCCESS" if 200<=status<400 else "FAIL"), status, False, metrics
+    return ("SUCCESS" if 200<=status<400 else "FAIL"), status, waf, metrics
 
 def step_cache_headers(http_output: str) -> None:
     headers = {}
