@@ -34,7 +34,7 @@ from typing import List, Tuple, Dict, Optional, Any, Union
 
 # --- Configuration & Constants ---
 
-VERSION = "2.3.0"
+VERSION = "2.3.1"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -97,7 +97,8 @@ class FileLogger:
             "steps": [],
             "summary": []
         }
-        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|[[0-?]*[ -/]*[@-~])')
+        # Fixed regex: escaped [ to [\
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\-_]|[[0-?]*[ -/]*[@-~])')
         self.verbose = verbose 
         self.silent = silent   
 
@@ -133,54 +134,47 @@ class FileLogger:
             return False
 
     def save_html(self, filename: str) -> bool:
-        html = f"""<!DOCTYPE html>
-<html>
-<head>
-<title>cfdiag Report - {self.html_data.get('domain', '')}</title>
-<style>
-body {{ font-family: sans-serif; background: #f4f6f8; padding: 20px; }}
-.container {{ max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
-h1 {{ color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; }}
-.meta {{ color: #7f8c8d; margin-bottom: 20px; }}
-.step {{ border: 1px solid #e1e4e8; margin-bottom: 15px; border-radius: 4px; overflow: hidden; }}
-.step-header {{ padding: 10px 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }}
-.step-content {{ padding: 15px; background: #fafbfc; border-top: 1px solid #e1e4e8; font-family: monospace; white-space: pre-wrap; }}
-.status-PASS {{ background: #d4edda; color: #155724; }}
-.status-FAIL {{ background: #f8d7da; color: #721c24; }}
-.status-WARN {{ background: #fff3cd; color: #856404; }}
-.status-INFO {{ background: #d1ecf1; color: #0c5460; }}
-.summary {{ background: #2c3e50; color: white; padding: 20px; border-radius: 4px; margin-top: 30px; }}
-.summary h2 {{ border-bottom: 1px solid #465a69; color: white; }}
-</style>
-</head>
-<body>
-<div class="container">
-<h1>cfdiag Report</h1>
-<div class="meta">Target: <strong>{self.html_data.get('domain', '')}</strong> | Date: {self.html_data.get('timestamp', '')}</div>
-"""
+        domain = self.html_data.get('domain', '')
+        ts = self.html_data.get('timestamp', '')
+        
+        html_parts = []
+        html_parts.append("<!DOCTYPE html><html><head>")
+        html_parts.append(f"<title>cfdiag Report - {domain}</title>")
+        html_parts.append("<style>")
+        html_parts.append("body { font-family: sans-serif; background: #f4f6f8; padding: 20px; }")
+        html_parts.append(".container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }")
+        html_parts.append("h1 { color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; }")
+        html_parts.append(".meta { color: #7f8c8d; margin-bottom: 20px; }")
+        html_parts.append(".step { border: 1px solid #e1e4e8; margin-bottom: 15px; border-radius: 4px; overflow: hidden; }")
+        html_parts.append(".step-header { padding: 10px 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }")
+        html_parts.append(".step-content { padding: 15px; background: #fafbfc; border-top: 1px solid #e1e4e8; font-family: monospace; white-space: pre-wrap; }")
+        html_parts.append(".status-PASS { background: #d4edda; color: #155724; }")
+        html_parts.append(".status-FAIL { background: #f8d7da; color: #721c24; }")
+        html_parts.append(".status-WARN { background: #fff3cd; color: #856404; }")
+        html_parts.append(".status-INFO { background: #d1ecf1; color: #0c5460; }")
+        html_parts.append(".summary { background: #2c3e50; color: white; padding: 20px; border-radius: 4px; margin-top: 30px; }")
+        html_parts.append(".summary h2 { border-bottom: 1px solid #465a69; color: white; }")
+        html_parts.append("</style></head><body><div class='container'>")
+        html_parts.append(f"<h1>cfdiag Report</h1><div class='meta'>Target: <strong>{domain}</strong> | Date: {ts}</div>")
+
         steps = self.html_data.get("steps", [])
         if isinstance(steps, list):
             for step in steps:
                 if isinstance(step, dict):
-                    html += f"""
-<div class="step">
-<div class="step-header status-{step.get('status', 'INFO')}">
-<span>{step.get('title', '')}</span>
-<span>[{step.get('status', '')}]</span>
-</div>
-<div class="step-content">{step.get('details', '')}</div>
-</div>
-"""
+                    status = step.get('status', 'INFO')
+                    title = step.get('title', '')
+                    details = step.get('details', '')
+                    html_parts.append(f"<div class='step'><div class='step-header status-{status}'><span>{title}</span><span>[{status}]</span></div><div class='step-content'>{details}</div></div>")
         
-        html += "<div class='summary'><h2>Summary</h2><ul>"
+        html_parts.append("<div class='summary'><h2>Summary</h2><ul>")
         summary = self.html_data.get("summary", [])
         if isinstance(summary, list):
             for line in summary:
-                html += f"<li>{line}</li>"
-        html += "</ul></div></div></body></html>"
+                html_parts.append(f"<li>{line}</li>")
+        html_parts.append("</ul></div></div></body></html>")
 
         try:
-            with open(filename, 'w') as f: f.write(html)
+            with open(filename, 'w') as f: f.write("\n".join(html_parts))
             return True
         except: return False
 
@@ -195,7 +189,7 @@ def print_header(title: str) -> None:
         logger.log_console(f" {title}", force=True)
         logger.log_console(f"{SEPARATOR}{Colors.ENDC}", force=True)
         logger.log_file(f"\n# {title}")
-        logger.log_file("=" * len(title))
+        logger.log_file("# " + "=" * len(title))
 
 def print_subheader(title: str) -> None:
     if logger:
@@ -419,13 +413,11 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     status_str = "PASS" if 200<=status<400 else "FAIL"
     if logger: logger.add_html_step("HTTP", status_str, f"Status: {status}\nMetrics: {metrics}")
     
-    # Feature 1: Cache Analysis
     step_cache_headers(output)
     
     return ("SUCCESS" if 200<=status<400 else "FAIL"), status, False, metrics
 
 def step_cache_headers(http_output: str) -> None:
-    # Analyzes headers for Cache status
     headers = {}
     for line in http_output.splitlines():
         if ':' in line:
@@ -569,7 +561,7 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     step_domain_status(domain)
     
     http_res = step_http(domain)
-    step_security_headers(domain) # Feature 2
+    step_security_headers(domain)
     step_http3_udp(domain)
     ssl_ok = step_ssl(domain)
     tcp_ok = step_tcp(domain)
