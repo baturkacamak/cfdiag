@@ -239,8 +239,20 @@ def run_command(command: str, timeout: int = 30, show_output: bool = True, log_o
                 if show_output and logger and logger.verbose and not logger.silent: 
                     sys.stdout.write(line) 
                 output_lines.append(line)
-        return process.poll(), "".join(output_lines)
+        
+        full_output = "".join(output_lines)
+        exit_code = process.poll()
+
+        if log_output_to_file and logger:
+             if full_output.strip():
+                 logger.log_file("Output:")
+                 logger.log_file(textwrap.indent(full_output, '    '))
+             if exit_code != 0:
+                 logger.log_file(f"[ERROR] Command failed with exit code {exit_code}")
+
+        return exit_code, full_output
     except Exception as e:
+        if logger: logger.log_file(f"[EXCEPTION] {e}")
         return -1, str(e)
 
 def check_internet_connection() -> bool:
