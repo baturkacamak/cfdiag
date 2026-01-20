@@ -34,7 +34,7 @@ from typing import List, Tuple, Dict, Optional, Any, Union
 
 # --- Configuration & Constants ---
 
-VERSION = "2.3.1"
+VERSION = "2.3.2"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -97,8 +97,8 @@ class FileLogger:
             "steps": [],
             "summary": []
         }
-        # Fixed regex: escaped [ to \[
-        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        # Fixed regex: escaped [ to [\
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|[[0-?]*[ -/]*[@-~])')
         self.verbose = verbose 
         self.silent = silent   
 
@@ -110,7 +110,7 @@ class FileLogger:
         clean_msg = self.ansi_escape.sub('', msg)
         self.file_buffer.append(clean_msg + end)
 
-    def log(self, msg: str = "", file_msg: Optional[str] = None, end: str = "\n", flush: bool = False, force: bool = False) -> None:
+    def log(self, msg: str = "", file_msg: Optional[str] = None, end: str = "\n", flush: bool = False, force: bool = False) -> None: 
         self.log_console(msg, end, flush, force)
         content = file_msg if file_msg is not None else msg
         self.log_file(content, end)
@@ -217,9 +217,13 @@ def print_cmd(cmd: str) -> None:
 def check_dependencies() -> None:
     missing = []
     if not shutil.which("curl"): missing.append("curl")
+    
     trace_cmd = "tracert" if os.name == 'nt' else "traceroute"
-    if not shutil.which(trace_cmd) and os.name != 'nt' and not os.path.exists("/usr/sbin/traceroute"):
-         missing.append("traceroute")
+    if not shutil.which(trace_cmd):
+        if os.name != 'nt': 
+             if not os.path.exists("/usr/sbin/traceroute"):
+                 missing.append("traceroute")
+    
     if missing:
         print(f"Missing required system tools: {', '.join(missing)}")
         sys.exit(1)
@@ -292,7 +296,7 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
                 ips.append(ip)
                 (ipv6 if ':' in ip else ipv4).append(ip)
         
-        detail = f"IPv4: {', '.join(ipv4)}\nIPv6: {', '.join(ipv6)}"
+        detail = f"IPv4: {', '.join(ipv4)}\\nIPv6: {', '.join(ipv6)}"
         if ipv4: print_success(f"IPv4 Resolved: {Colors.WHITE}{', '.join(ipv4)}{Colors.ENDC}")
         else: print_warning("No IPv4 records found.")
         if ipv6: print_success(f"IPv6 Resolved: {Colors.WHITE}{', '.join(ipv6)}{Colors.ENDC}")
@@ -305,7 +309,7 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
                     data = json.loads(out2)
                     host_str = f"Host: {data.get('isp')} ({data.get('org')}) - {data.get('country')}"
                     print_success(f"{Colors.WHITE}{host_str}{Colors.ENDC}")
-                    detail += f"\n{host_str}"
+                    detail += f"\\n{host_str}"
                 except: pass
         
         if logger: logger.add_html_step("DNS", "PASS" if ips else "FAIL", detail)
@@ -328,10 +332,10 @@ def step_blacklist(domain: str, ip: str) -> None:
             try:
                 socket.gethostbyname(query)
                 print_fail(f"Listed on {name}!")
-                details += f"Listed on {name}\n"
+                details += f"Listed on {name}\\n"
                 listed = True
             except:
-                details += f"Clean on {name}\n"
+                details += f"Clean on {name}\\n"
         if logger: logger.add_html_step("Blacklist Check", "FAIL" if listed else "PASS", details)
     except Exception as e:
         print_warning(f"Blacklist check failed: {e}")
@@ -357,7 +361,7 @@ def step_propagation(domain: str, expected_ns: str) -> str:
         if found: matches += 1
         res_str = "MATCH" if found else "MISMATCH"
         print_info(f"{name}: {res_str}")
-        details += f"{name}: {res_str}\n"
+        details += f"{name}: {res_str}\\n"
     
     status = "MATCH" if matches == len(PUBLIC_RESOLVERS) else "PARTIAL"
     if logger: logger.add_html_step("Propagation", status, details)
@@ -383,7 +387,7 @@ def step_domain_status(domain: str) -> None:
             statuses = [s for s in data.get("status", []) if "transfer" not in s]
             if statuses: 
                 print_success(f"Status: {', '.join(statuses)}")
-                detail += f"Status: {statuses}\n"
+                detail += f"Status: {statuses}\\n"
             for event in data.get("events", []):
                 if event.get("eventAction") == "expiration":
                     print_success(f"Expires: {event.get('eventDate')}")
@@ -411,7 +415,7 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
                 except: pass
     
     status_str = "PASS" if 200<=status<400 else "FAIL"
-    if logger: logger.add_html_step("HTTP", status_str, f"Status: {status}\nMetrics: {metrics}")
+    if logger: logger.add_html_step("HTTP", status_str, f"Status: {status}\\nMetrics: {metrics}")
     
     step_cache_headers(output)
     
@@ -460,11 +464,11 @@ def step_security_headers(domain: str) -> None:
     for header, name in checks.items():
         if header in headers:
             print_success(f"{name}: Found")
-            details += f"{name}: PASS\n"
+            details += f"{name}: PASS\\n"
             passed += 1
         else:
             print_warning(f"{name}: Missing")
-            details += f"{name}: MISSING\n"
+            details += f"{name}: MISSING\\n"
             
     if logger: logger.add_html_step("Security Headers", f"{passed}/{len(checks)}", details)
 
@@ -561,7 +565,7 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     step_domain_status(domain)
     
     http_res = step_http(domain)
-    step_security_headers(domain)
+    step_security_headers(domain) # Feature 2
     step_http3_udp(domain)
     ssl_ok = step_ssl(domain)
     tcp_ok = step_tcp(domain)

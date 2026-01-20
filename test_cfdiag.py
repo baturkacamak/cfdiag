@@ -42,7 +42,6 @@ server: cloudflare
 cf-cache-status: HIT
 """
         cfdiag.step_cache_headers(output)
-        # Implicit assertion: no crash, logger called (mocked)
 
     @patch('cfdiag.run_command')
     def test_security_headers(self, mock_run):
@@ -57,7 +56,7 @@ strict-transport-security: max-age=31536000
     @patch('cfdiag.step_http')
     @patch('cfdiag.step_tcp')
     @patch('cfdiag.run_command')
-    @patch('cfdiag.step_security_headers') # Mock new step
+    @patch('cfdiag.step_security_headers') 
     def test_html_report_generation(self, mock_sec, mock_run, mock_tcp, mock_http, mock_dns, mock_net):
         mock_net.return_value = True
         mock_dns.return_value = (True, ["1.1.1.1"], [])
