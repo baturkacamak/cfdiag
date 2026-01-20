@@ -16,7 +16,8 @@ Options:
     --ipv4          Force IPv4
     --ipv6          Force IPv6
     --proxy URL     Use HTTP/HTTPS Proxy
-    --json          Output JSON to stdout (Planned)
+    --json          Output JSON to stdout
+    --completion    Generate shell completion (bash/zsh)
 
 Author: Gemini Agent
 """
@@ -42,7 +43,7 @@ from typing import List, Tuple, Dict, Optional, Any, Union
 
 # --- Configuration & Constants ---
 
-VERSION = "2.11.0"
+VERSION = "2.12.0"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -225,6 +226,54 @@ def get_curl_flags() -> str:
     if ctx.get('ipv6'): flags.append("-6")
     if ctx.get('proxy'): flags.append(f"--proxy {ctx.get('proxy')}")
     return " " + " ".join(flags) if flags else ""
+
+def generate_completion(shell: str) -> None:
+    if shell == "bash":
+        print("""
+_cfdiag()
+{
+    local cur prev opts
+    COMPREPLY=()
+    cur=\"${COMP_WORDS[COMP_CWORD]}\"
+    prev=\"${COMP_WORDS[COMP_CWORD-1]}\"
+    opts=\"--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion\"
+
+    if [[ ${cur} == -* ]] ; then
+        COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+        return 0
+    fi
+}
+complete -F _cfdiag cfdiag
+        """.strip())
+    elif shell == "zsh":
+        print("""
+#compdef cfdiag
+
+_cfdiag() {
+    local -a args
+    args=(
+        '--origin[Direct IP address of origin server]:ip:_hosts'
+        '--expect[Expected nameservers substring]:string'
+        '--profile[Load profile from config]:string'
+        '--file[Batch mode file path]:filename:_files'
+        '--verbose[Enable verbose output]'
+        '--no-color[Disable color output]'
+        '--diff[Compare two reports]:filename:_files'
+        '--version[Show version]'
+        '--update[Self-update tool]'
+        '--metrics[Export metrics]'
+        '--threads[Number of threads]:number'
+        '--ipv4[Force IPv4]'
+        '--ipv6[Force IPv6]'
+        '--proxy[HTTP Proxy URL]:url'
+        '--json[Output JSON to stdout]'
+        '--completion[Generate shell completion]:(bash zsh)'
+    )
+    _arguments "${args[@]}"
+}
+        """.strip())
+    else:
+        print(f"Unsupported shell: {shell}")
 
 def print_header(title: str) -> None:
     l = get_logger()
@@ -967,7 +1016,15 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
         "http": http_res[0],
         "tcp": "OK" if tcp_ok else "FAIL",
         "dnssec": dnssec_status,
-        "log": log_file
+        "log": log_file,
+        # Feature: Full JSON Output Dictionary
+        "details": {
+            "ipv4": ipv4,
+            "ipv6": ipv6,
+            "ssl_ok": ssl_ok,
+            "http_metrics": http_res[3],
+            "history_diff": history_diff
+        }
     }
 
 def run_diagnostics_wrapper(domain: str, origin: Optional[str], expect: Optional[str], metrics: bool, verbose: bool, silent: bool, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -975,10 +1032,6 @@ def run_diagnostics_wrapper(domain: str, origin: Optional[str], expect: Optional
     set_logger(l)
     set_context(context)
     return run_diagnostics(domain, origin, expect, metrics)
-
-def run_diagnostics_impl(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False) -> Dict[str, Any]:
-    # Alias for run_diagnostics
-    return run_diagnostics(domain, origin_ip, expected_ns, export_metrics)
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -999,12 +1052,15 @@ def main() -> None:
     group.add_argument("--ipv4", action="store_true", help="Force IPv4")
     group.add_argument("--ipv6", action="store_true", help="Force IPv6")
     parser.add_argument("--proxy", help="Use HTTP Proxy (e.g. http://1.2.3.4:8080)")
+    parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
+    parser.add_argument("--completion", choices=['bash', 'zsh'], help="Generate shell completion")
     
     args = parser.parse_args()
     
     if args.update: self_update(); return
     if args.no_color: Colors.disable()
     if args.diff: compare_reports(args.diff[0], args.diff[1]); return
+    if args.completion: generate_completion(args.completion); return
 
     config = load_config(args.profile)
     domain = args.domain or config.get("domain")
@@ -1015,7 +1071,6 @@ def main() -> None:
     if not check_internet_connection(): print("No Internet."); sys.exit(1)
     check_dependencies()
     
-    # Global context for flags
     ctx = {
         'ipv4': args.ipv4,
         'ipv6': args.ipv6,
@@ -1050,11 +1105,18 @@ def main() -> None:
         print(f"\n{Colors.OKGREEN}Batch Complete. Detailed reports in reports/{Colors.ENDC}")
 
     else:
-        l = FileLogger(verbose=args.verbose, silent=False)
+        # If JSON output is requested, suppress standard logs
+        silent = True if args.json else False
+        l = FileLogger(verbose=args.verbose, silent=silent)
         set_logger(l)
         set_context(ctx)
-        run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics)
-        if not args.verbose: print(f"\n{Colors.OKBLUE}📄 Reports saved to reports/{domain}/ folder.{Colors.ENDC}")
+        
+        result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics)
+        
+        if args.json:
+            print(json.dumps(result, indent=4))
+        else:
+            if not args.verbose: print(f"\n{Colors.OKBLUE}📄 Reports saved to reports/{domain}/ folder.{Colors.ENDC}")
 
 if __name__ == "__main__":
     main()

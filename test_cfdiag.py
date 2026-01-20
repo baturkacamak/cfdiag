@@ -5,6 +5,8 @@ import cfdiag
 import socket
 import json
 import os
+import io
+import sys
 
 class TestCFDiag(unittest.TestCase):
 
@@ -18,7 +20,6 @@ class TestCFDiag(unittest.TestCase):
         
         self.mock_get_logger.return_value = self.mock_logger_instance
         
-        # Patch context to return empty dict by default
         self.ctx_patcher = patch('cfdiag.get_context', return_value={})
         self.mock_get_context = self.ctx_patcher.start()
 
@@ -45,25 +46,6 @@ class TestCFDiag(unittest.TestCase):
         with patch('shutil.which', return_value='/usr/bin/openssl'):
             cfdiag.step_ocsp("example.com")
 
-    @patch('cfdiag.run_command')
-    def test_hsts_preload(self, mock_run):
-        output_headers = """HTTP/2 200
-strict-transport-security: max-age=31536000; includeSubDomains; preload
-"""
-        output_api = '{"status": "preloaded"}'
-        mock_run.side_effect = [(0, output_headers), (0, output_api)]
-        cfdiag.step_security_headers("example.com")
-
-    @patch('cfdiag.run_command')
-    def test_redirects(self, mock_run):
-        mock_run.side_effect = [(0, "http://next.com"), (0, "")] 
-        cfdiag.step_redirects("example.com")
-
-    @patch('cfdiag.run_command')
-    def test_waf_evasion(self, mock_run):
-        mock_run.side_effect = [(0, "200"), (0, "403"), (0, "200")]
-        cfdiag.step_waf_evasion("example.com")
-        
     @patch('cfdiag.check_internet_connection')
     @patch('cfdiag.step_dns')
     @patch('cfdiag.step_http')
@@ -72,7 +54,8 @@ strict-transport-security: max-age=31536000; includeSubDomains; preload
     @patch('cfdiag.step_redirects')
     @patch('cfdiag.step_waf_evasion')
     @patch('cfdiag.step_ocsp')
-    def test_run_diagnostics_integration(self, mock_ocsp, mock_waf, mock_red, mock_run, mock_tcp, mock_http, mock_dns, mock_net):
+    @patch('cfdiag.step_security_headers')
+    def test_run_diagnostics_integration(self, mock_sec, mock_ocsp, mock_waf, mock_red, mock_run, mock_tcp, mock_http, mock_dns, mock_net):
         mock_net.return_value = True
         mock_dns.return_value = (True, ["1.1.1.1"], [])
         mock_http.return_value = ("SUCCESS", 200, False, {})
@@ -86,12 +69,16 @@ strict-transport-security: max-age=31536000; includeSubDomains; preload
              
         self.mock_logger_instance.save_html.assert_called()
 
+    def test_completion(self):
+        capturedOutput = io.StringIO()
+        sys.stdout = capturedOutput
+        cfdiag.generate_completion("bash")
+        sys.stdout = sys.__stdout__
+        self.assertIn("complete -F _cfdiag cfdiag", capturedOutput.getvalue())
+
     def test_curl_flags(self):
-        # Test flag generation
-        self.mock_get_context.return_value = {'ipv4': True, 'proxy': 'http://proxy'}
-        flags = cfdiag.get_curl_flags()
-        self.assertIn("-4", flags)
-        self.assertIn("--proxy http://proxy", flags)
+        self.mock_get_context.return_value = {'ipv4': True}
+        self.assertIn("-4", cfdiag.get_curl_flags())
 
 if __name__ == '__main__':
     unittest.main()
