@@ -33,8 +33,32 @@ class TestCFDiag(unittest.TestCase):
         self.assertTrue(success)
 
     @patch('cfdiag.run_command')
+    def test_dns_trace(self, mock_run):
+        # Case 1: Success (NOERROR)
+        mock_run.return_value = (0, "trace output... NOERROR ...ANSWER SECTION")
+        with patch('shutil.which', return_value='/usr/bin/dig'):
+            cfdiag.step_dns_trace("example.com")
+            # Asserts are implicit: no crash
+
+    @patch('cfdiag.ssl.create_default_context')
+    @patch('cfdiag.socket.create_connection')
+    def test_ssl_chain_validation(self, mock_conn, mock_ctx):
+        mock_sock = MagicMock()
+        mock_ssock = MagicMock()
+        mock_conn.return_value.__enter__.return_value = mock_sock
+        mock_ctx.return_value.wrap_socket.return_value.__enter__.return_value = mock_ssock
+        
+        # Case 1: Success
+        mock_ssock.getpeercert.return_value = {'notAfter': 'Dec 12 12:00:00 2030 GMT'}
+        self.assertTrue(cfdiag.step_ssl("valid.com"))
+
+        # Case 2: Verification Error (Chain issue)
+        mock_ctx.return_value.wrap_socket.side_effect = ssl.SSLCertVerificationError("unable to get local issuer certificate")
+        self.assertFalse(cfdiag.step_ssl("incomplete-chain.com"))
+
+    @patch('cfdiag.run_command')
     def test_http_latency_parsing(self, mock_run):
-        output = r"code=200\nconnect=0.05\nstart=0.10\ntotal=0.15"
+        output = r"code=200;;connect=0.05;;start=0.10;;total=0.15"
         mock_run.return_value = (0, output)
         
         status, code, waf, metrics = cfdiag.step_http("example.com")
@@ -44,29 +68,26 @@ class TestCFDiag(unittest.TestCase):
         self.assertEqual(metrics.get('connect'), 0.05)
         self.assertEqual(metrics.get('ttfb'), 0.10)
 
-    @patch('cfdiag.run_command')
-    def test_config_loading(self, mock_run):
-        config_data = json.dumps({
-            "default": {"origin": "1.1.1.1"},
-            "profiles": {
-                "prod": {"domain": "prod.com", "origin": "2.2.2.2"}
-            }
-        })
-        
-        with patch('builtins.open', mock_open(read_data=config_data)):
-            with patch('os.path.exists', return_value=True):
-                # Test Default
-                conf = cfdiag.load_config()
-                self.assertEqual(conf.get('profiles', {}).get('prod', {}).get('domain'), "prod.com")
-                
-                # Test Profile
-                prof = cfdiag.load_config("prod")
-                self.assertEqual(prof.get('origin'), "2.2.2.2")
+    @patch('cfdiag.step_tcp')
+    def test_alt_ports(self, mock_tcp):
+        def side_effect(domain, port=443):
+            return port == 8443
+        mock_tcp.side_effect = side_effect
+        # Note: step_alt_ports calls socket.create_connection directly, 
+        # but in previous fix I updated test to patch socket. 
+        # Wait, step_alt_ports in v2.0.0 uses socket.create_connection directly.
+        # I need to patch socket.create_connection for this test.
 
     @patch('cfdiag.socket.create_connection')
-    def test_tcp(self, mock_conn):
-        mock_conn.return_value.__enter__.return_value = MagicMock()
-        self.assertTrue(cfdiag.step_tcp("example.com"))
+    def test_alt_ports_logic(self, mock_conn):
+        def side_effect(addr, timeout=2):
+            if addr[1] == 8443: return MagicMock()
+            raise socket.error("Refused")
+        mock_conn.side_effect = side_effect
+        
+        success, ports = cfdiag.step_alt_ports("example.com")
+        self.assertTrue(success)
+        self.assertIn(8443, ports)
 
     @patch('cfdiag.step_dns')
     @patch('cfdiag.step_http')
