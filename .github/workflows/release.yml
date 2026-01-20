@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build binaries
@@ -18,7 +21,7 @@ jobs:
             asset_name: cfdiag-linux-amd64
           - os: windows-latest
             artifact_name: cfdiag.exe
-            asset_name: cfdiag-windows-amd64.exe
+            asset_name: cfdiag-windows-amd64
           - os: macos-latest
             artifact_name: cfdiag
             asset_name: cfdiag-macos-amd64
@@ -37,26 +40,6 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
-        run: |
-          pyinstaller --onefile --name ${{ matrix.artifact_name }} cfdiag/__main__.py
-          # Note: PyInstaller might look for __main__.py if pointing to directory, or we point to entry script?
-          # In v3.0.0 refactor, we removed cfdiag.py. We have cfdiag/ folder.
-          # We should create a build entry script or point PyInstaller to cfdiag/__main__.py?
-          # Actually, `pyinstaller cfdiag/__main__.py` works but name will be `__main__`.
-          # We force name with `--name`.
-
-      - name: Rename Artifact if needed (Linux/Mac)
-        if: matrix.os != 'windows-latest'
-        run: |
-          # PyInstaller puts output in dist/
-          # Ensure it matches artifact_name
-          # If we build cfdiag/__main__.py, output might be dist/__main__ or dist/cfdiag depending on spec
-          # Let's verify.
-          # Better approach: Create a temporary entry script.
-          echo "import cfdiag.core; cfdiag.core.main()" > entry.py
-          pyinstaller --onefile --name ${{ matrix.artifact_name }} entry.py
-
-      - name: Build with PyInstaller (Retry with Entry Script)
         run: |
           echo "import cfdiag.core; cfdiag.core.main()" > entry.py
           pyinstaller --onefile --name ${{ matrix.artifact_name }} entry.py
@@ -103,6 +86,9 @@ jobs:
       
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+
+      - name: List Files
+        run: ls -R
 
       - name: Create Release
         id: create_release
