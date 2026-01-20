@@ -11,7 +11,7 @@ import time
 from typing import Tuple, List, Dict, Optional
 from .utils import get_curl_flags, PUBLIC_RESOLVERS, DNSBL_LIST, USER_AGENTS, console_lock, Colors
 from .reporting import (
-    get_logger, print_header, print_subheader, print_success,
+    get_logger, print_header, print_subheader, print_success, 
     print_fail, print_info, print_warning, print_cmd
 )
 
@@ -127,6 +127,29 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
         print_fail(f"DNS resolution failed: {e}")
         if l: l.add_html_step("DNS", "FAIL", str(e))
         return False, [], []
+
+def step_doh(domain: str) -> bool:
+    print_subheader("1.5 DNS-over-HTTPS (DoH) Check")
+    l = get_logger()
+    url = f"https://cloudflare-dns.com/dns-query?name={domain}&type=A"
+    cmd = f'curl -s -H "Accept: application/dns-json" "{url}"'
+    c, out = run_command(cmd, show_output=False, log_output_to_file=True)
+    
+    if c == 0:
+        try:
+            data = json.loads(out)
+            if data.get('Status') == 0:
+                answers = data.get('Answer', [])
+                ips = [a['data'] for a in answers if a['type'] == 1]
+                if ips:
+                    print_success(f"DoH Resolution: {', '.join(ips)}")
+                    if l: l.add_html_step("DoH", "PASS", f"IPs: {ips}")
+                    return True
+        except: pass
+    
+    print_warning("DoH Resolution Failed.")
+    if l: l.add_html_step("DoH", "FAIL", "Failed")
+    return False
 
 def step_blacklist(domain: str, ip: str) -> None:
     print_subheader("2. Blacklist/Reputation Check (DNSBL)")
@@ -409,6 +432,29 @@ def step_mtu(domain: str) -> bool:
     print_subheader("11. MTU Check")
     return True
 
+def get_traceroute_hops(domain: str) -> List[str]:
+    cmd = f"tracert -h 15 {domain}" if os.name == 'nt' else f"traceroute -m 15 -w 2 {domain}"
+    from .utils import get_context
+    ctx = get_context()
+    flags = ""
+    if ctx.get('ipv4'): flags = " -4"
+    if ctx.get('ipv6'): flags = " -6"
+    if "traceroute" in cmd: cmd = cmd.replace("traceroute", f"traceroute{flags}")
+    
+    c, out = run_command(cmd, timeout=60, log_output_to_file=False, show_output=False)
+    hops = []
+    if c == 0:
+        ips = re.findall(r'\((\d+\.\d+\.\d+\.\d+|[a-fA-F0-9:]+)\)', out)
+        if not ips:
+            ips = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', out)
+        
+        seen = set()
+        for ip in ips:
+            if ip not in seen and not ip.startswith("0."):
+                hops.append(ip)
+                seen.add(ip)
+    return hops
+
 def step_traceroute(domain: str) -> None:
     print_subheader("12. Traceroute")
     cmd = f"tracert -h 15 {domain}" if os.name == 'nt' else f"traceroute -m 15 -w 2 {domain}"
@@ -492,11 +538,8 @@ def step_waf_evasion(domain: str) -> None:
     if l: l.add_html_step("WAF Evasion", "INFO", f"Blocked: {blocked}\nAllowed: {allowed}")
 
 def step_speed(domain: str) -> None:
-    # Feature: Throughput Test
     print_subheader("19. Throughput Speed Test")
     flags = get_curl_flags()
-    # Download header + body, discard output, measure speed
-    # curl -w "%{{speed_download}}" ...
     cmd = f'curl{flags} -s -w "%{{speed_download}}" -o /dev/null https://{domain}/'
     
     speeds = []
@@ -504,7 +547,6 @@ def step_speed(domain: str) -> None:
         c, out = run_command(cmd, show_output=False, log_output_to_file=True)
         if c == 0:
             try:
-                # speed_download is bytes/sec
                 s = float(out.strip())
                 speeds.append(s)
             except: pass
@@ -512,7 +554,6 @@ def step_speed(domain: str) -> None:
     l = get_logger()
     if speeds:
         avg_speed = sum(speeds) / len(speeds)
-        # Convert to Mbps
         mbps = (avg_speed * 8) / 1_000_000
         print_success(f"Average Download Speed: {mbps:.2f} Mbps")
         if l: l.add_html_step("Speed Test", "PASS", f"Avg: {mbps:.2f} Mbps")
@@ -520,7 +561,6 @@ def step_speed(domain: str) -> None:
         print_warning("Speed test failed to collect data.")
 
 def step_dns_benchmark(domain: str) -> None:
-    # Feature: DNS Benchmark
     print_subheader("20. DNS Resolver Benchmark")
     results = []
     if not shutil.which("dig"): return
@@ -544,3 +584,39 @@ def step_dns_benchmark(domain: str) -> None:
         details += f"{name}: {ms:.2f} ms\n"
         
     if l: l.add_html_step("DNS Benchmark", "INFO", details)
+
+def step_graph(domain: str) -> None:
+    print_subheader("21. Topology Graph (DOT)")
+    hops = get_traceroute_hops(domain)
+    if not hops:
+        print_fail("Could not determine hops for graph.")
+        return
+        
+    dot = ["digraph G {"]
+    dot.append('  node [shape=box];')
+    dot.append(f'  User [label="User"];')
+    
+    previous = "User"
+    for i, hop in enumerate(hops):
+        name = f"Hop{i+1}"
+        dot.append(f'  {name} [label="{hop}"];')
+        dot.append(f'  "{previous}" -> "{name}";')
+        previous = name
+        
+    dot.append(f'  Dest [label="{domain}"];')
+    dot.append(f'  "{previous}" -> "Dest";')
+    dot.append("}")
+    
+    dot_str = "\n".join(dot)
+    print(dot_str)
+    
+    l = get_logger()
+    if l: l.log_file(f"Graphviz DOT:\n{dot_str}")
+
+def ping_host(host: str) -> float:
+    cmd = f"ping -c 1 -W 1 {host}" if os.name != 'nt' else f"ping -n 1 -w 1000 {host}"
+    c, out = run_command(cmd, show_output=False, log_output_to_file=False)
+    if c == 0:
+        m = re.search(r'time[=<]([\d\.]+)', out)
+        if m: return float(m.group(1))
+    return -1.0
