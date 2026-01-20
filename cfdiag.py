@@ -9,7 +9,8 @@ It orchestrates native system tools and Python libraries to gather
 diagnostics and presents a structured, actionable summary.
 
 Usage:
-    python3 cfdiag.py <domain> [--origin <ip>] [--expect <ns>] [--file <list>]
+    python3 cfdiag.py <domain> [--origin <ip>] [--verbose]
+    python3 cfdiag.py --file domains.txt
 
 Author: Gemini Agent
 """
@@ -31,7 +32,7 @@ import urllib.request
 
 # --- Configuration & Constants ---
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -79,22 +80,26 @@ if os.name == 'nt':
 
 class FileLogger:
     """Handles printing to stdout and buffering for clean file output."""
-    def __init__(self, silent=False):
+    def __init__(self, verbose=False, silent=False):
         self.file_buffer = []
         self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|[[0-?]*[ -/]*[@-~])')
-        self.silent = silent # If true, suppress console output (for batch mode)
+        self.verbose = verbose # If true, print steps to console
+        self.silent = silent   # If true, print NOTHING to console (for batch mode)
 
-    def log_console(self, msg="", end="\n", flush=False):
-        if not self.silent:
+    def log_console(self, msg="", end="\n", flush=False, force=False):
+        # Print if verbose OR if forced (used for Summary)
+        if not self.silent and (self.verbose or force):
             print(msg, end=end, flush=flush)
 
     def log_file(self, msg, end="\n"):
         clean_msg = self.ansi_escape.sub('', msg)
         self.file_buffer.append(clean_msg + end)
 
-    def log(self, msg="", file_msg=None, end="\n", flush=False):
-        if not self.silent:
-            print(msg, end=end, flush=flush)
+    def log(self, msg="", file_msg=None, end="\n", flush=False, force=False):
+        """
+        Generic log: Prints to console based on verbosity, always appends to file.
+        """
+        self.log_console(msg, end, flush, force)
         
         content_for_file = file_msg if file_msg is not None else msg
         clean_msg = self.ansi_escape.sub('', content_for_file)
@@ -106,7 +111,7 @@ class FileLogger:
                 f.write("".join(self.file_buffer))
             return True
         except Exception as e:
-            if not self.silent:
+            if self.verbose:
                 print(f"{Colors.FAIL}Error saving log: {e}{Colors.ENDC}")
             return False
 
@@ -116,13 +121,15 @@ logger = None
 # --- Helper Functions ---
 
 def print_header(title):
-    logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}{SEPARATOR}")
-    logger.log_console(f" {title}")
-    logger.log_console(f"{SEPARATOR}{Colors.ENDC}")
+    logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}{SEPARATOR}", force=True)
+    logger.log_console(f" {title}", force=True)
+    logger.log_console(f"{SEPARATOR}{Colors.ENDC}", force=True)
+    
     logger.log_file(f"\n# {title}")
     logger.log_file("=" * len(title))
 
 def print_subheader(title):
+    # Only print subheaders in verbose mode
     logger.log_console(f"\n{Colors.BOLD}{Colors.OKCYAN}>>> {title}{Colors.ENDC}")
     logger.log_console(f"{Colors.GREY}{SUB_SEPARATOR}{Colors.ENDC}")
     logger.log_file(f"\n## {title}")
@@ -165,7 +172,9 @@ def run_command(command, timeout=30, show_output=True, log_output_to_file=True):
             line = process.stdout.readline()
             if not line and process.poll() is not None: break
             if line:
-                if show_output and not logger.silent: sys.stdout.write(line) 
+                # Direct sys.stdout write for real-time output if verbose
+                if show_output and logger.verbose and not logger.silent: 
+                    sys.stdout.write(line) 
                 output_lines.append(line)
         
         full_output = "".join(output_lines)
@@ -270,7 +279,6 @@ def step_propagation(domain, expected_ns):
             if shutil.which("dig"):
                 found_records = [l.strip().strip('.') for l in out.splitlines() if l.strip()]
             else: # Windows nslookup
-                # Simplified parsing for windows
                 for line in out.splitlines():
                     if "nameserver =" in line:
                         found_records.append(line.split("=")[1].strip())
@@ -309,7 +317,7 @@ def step_dnssec(domain):
     # Check for DS record
     c, out = run_command(f"dig DS {domain} +short", log_output_to_file=True)
     if not out.strip():
-        print_info("No DS record found. DNSSEC is likely {Colors.BOLD}DISABLED{Colors.ENDC}.")
+        print_info(f"No DS record found. DNSSEC is likely {Colors.BOLD}DISABLED{Colors.ENDC}.")
         return "DISABLED"
     
     # Check for RRSIG
@@ -319,7 +327,7 @@ def step_dnssec(domain):
         print_success("DNSSEC Signatures (RRSIG) found. Zone is signed.")
         return "SIGNED"
     else:
-        print_fail("DS record exists but no RRSIG found on A record. {Colors.BOLD}DNSSEC BROKEN?{Colors.ENDC}")
+        print_fail(f"DS record exists but no RRSIG found on A record. {Colors.BOLD}DNSSEC BROKEN?{Colors.ENDC}")
         return "BROKEN"
 
 def step_domain_status(domain):
@@ -464,13 +472,13 @@ def run_diagnostics(domain, origin_ip=None, expected_ns=None):
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     log_file = os.path.join(reports_dir, f"{domain}_{timestamp}.txt")
     
-    print_header(f"DIAGNOSING: {domain}")
-    logger.log_file(f"Domain: {domain}\nDate: {timestamp}")
+    # In single mode, this header prints to console. In silent mode, only to file.
+    logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}DIAGNOSING: {domain}{Colors.ENDC}", force=True) # Always show "Diagnosing..."
+    logger.log_file(f"# DIAGNOSIS: {domain}\nDate: {timestamp}")
 
     # Run Steps
     dns_ok, ipv4, ipv6 = step_dns(domain)
     
-    # Feature: Propagation Check
     prop_status = "N/A"
     if expected_ns:
         prop_status = step_propagation(domain, expected_ns)
@@ -493,9 +501,9 @@ def run_diagnostics(domain, origin_ip=None, expected_ns=None):
         origin_res = step_origin(domain, origin_ip)
 
     # Save
+    generate_summary(domain, (dns_ok, ipv4, ipv6), http_res, tcp_ok, cf_trace_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res, (False, []))
     logger.save_to_file(log_file)
     
-    # Return summary dict for batch mode
     return {
         "domain": domain,
         "dns": prop_status if expected_ns else ("OK" if dns_ok else "FAIL"),
@@ -505,6 +513,98 @@ def run_diagnostics(domain, origin_ip=None, expected_ns=None):
         "log": log_file
     }
 
+def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res):
+    # This header prints to console ALWAYS, effectively being the "Report"
+    logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}{SEPARATOR}", force=True)
+    logger.log_console(f" DIAGNOSTIC SUMMARY: {domain}", force=True)
+    logger.log_console(f"{SEPARATOR}{Colors.ENDC}", force=True)
+    
+    logger.log_file(f"\n# DIAGNOSTIC SUMMARY")
+    logger.log_file("# " + "-" * 30)
+    
+    conclusions = []
+    
+    # DNS Analysis
+    dns_ok, ipv4, ipv6 = dns_res
+    if not dns_ok:
+        conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} DNS Resolution failed.",
+                            "[CRITICAL] DNS Resolution failed."))
+    else:
+        conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} DNS is resolving correctly.",
+                            "[PASS] DNS is resolving correctly."))
+
+    # SSL
+    if ssl_res:
+         conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} SSL Certificate is valid.",
+                             "[PASS] SSL Certificate is valid."))
+    else:
+         conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} SSL Certificate information could not be verified.",
+                             "[WARN] SSL Certificate information could not be verified."))
+
+    # TCP/Network Analysis
+    if tcp_res:
+         conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} TCP (Port 443) is open.",
+                             "[PASS] TCP (Port 443) is open."))
+    else:
+         conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} TCP connection failed.",
+                             "[CRITICAL] TCP connection failed."))
+
+    # HTTP Analysis
+    http_status, http_code, is_waf = http_res
+    
+    if http_status == "SUCCESS":
+        conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} HTTP requests are working (Code {http_code}).",
+                            f"[PASS] HTTP requests are working (Code {http_code})."))
+    elif http_status == "WAF_BLOCK":
+        conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[BLOCK]{Colors.ENDC} Cloudflare WAF/Challenge detected (Code {http_code}).",
+                            f"[BLOCK] Cloudflare WAF/Challenge detected (Code {http_code})."))
+    elif http_status == "CLIENT_ERROR":
+         conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} Server returned Client Error (Code {http_code}).",
+                             f"[WARN] Server returned Client Error (Code {http_code})."))
+    elif http_status == "SERVER_ERROR":
+         conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} Server returned Error (Code {http_code}).",
+                             f"[CRITICAL] Server returned Error (Code {http_code})."))
+         if http_code == 522:
+             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 522: Connection Timed Out to Origin.",
+                                 "[ALERT] Cloudflare 522: Connection Timed Out to Origin."))
+         elif http_code == 525:
+             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 525: SSL Handshake Failed with Origin.",
+                                 "[ALERT] Cloudflare 525: SSL Handshake Failed with Origin."))
+         elif http_code == 502:
+             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 502: Bad Gateway (Origin invalid response/down).",
+                                 "[ALERT] Cloudflare 502: Bad Gateway (Origin invalid response/down)."))
+    elif http_status == "TIMEOUT":
+        conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} HTTP Request Timed Out (Potential 522).",
+                            "[CRITICAL] HTTP Request Timed Out (Potential 522)."))
+
+    # Direct Origin
+    if origin_res:
+        connected, reason = origin_res
+        if connected and reason == "SUCCESS":
+             conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Direct Origin Connection SUCCEEDED.",
+                                 "[PASS] Direct Origin Connection SUCCEEDED."))
+             if http_code in [522, 524, 502, 504]:
+                  conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[DIAGNOSIS]{Colors.ENDC} Origin is UP but Cloudflare is failing.",
+                                      "[DIAGNOSIS] Origin is UP but Cloudflare is failing."))
+                  conclusions.append(("  -> CAUSE: Firewall is likely blocking Cloudflare IPs.",
+                                      "  -> CAUSE: Firewall is likely blocking Cloudflare IPs."))
+        elif not connected and reason == "TIMEOUT":
+             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} Direct Origin Connection TIMED OUT.",
+                                 "[CRITICAL] Direct Origin Connection TIMED OUT."))
+             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[DIAGNOSIS]{Colors.ENDC} Origin Server is DOWN or Unreachable.",
+                                 "[DIAGNOSIS] Origin Server is DOWN or Unreachable."))
+
+    # Edge Reachability
+    if cf_res or cf_trace_res[0]:
+        conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Cloudflare Edge Network is reachable.",
+                            "[PASS] Cloudflare Edge Network is reachable."))
+
+    for console_msg, file_msg in conclusions:
+        # Force these to print even in default (non-verbose) mode
+        logger.log(console_msg, file_msg=file_msg, force=True)
+    
+    logger.log_console(f"\n{Colors.GREY}{SEPARATOR}{Colors.ENDC}", force=True)
+
 def main():
     global logger
     
@@ -513,6 +613,7 @@ def main():
     parser.add_argument("--origin", help="Optional: Origin Server IP to test direct connectivity")
     parser.add_argument("--expect", help="Optional: Expected Nameserver (e.g. ns1.host.com) to check propagation")
     parser.add_argument("--file", help="Batch mode: file with list of domains")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed steps")
     parser.add_argument("--no-color", action="store_true")
     parser.add_argument("--version", action="version", version=f"cfdiag {VERSION}")
     parser.add_argument("--update", action="store_true")
@@ -534,7 +635,6 @@ def main():
             sys.exit(1)
             
         print(f"\n{Colors.BOLD}{Colors.HEADER}=== BATCH MODE STARTED ==={Colors.ENDC}\n")
-        # Adjust table headers based on features used
         dns_header = "PROPAGATION" if args.expect else "DNS"
         print(f"{ 'DOMAIN':<30} | {dns_header:<12} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
         print("-" * 85)
@@ -544,7 +644,8 @@ def main():
                 d = line.strip()
                 if not d: continue
                 
-                logger = FileLogger(silent=True)
+                # Silent console, but verbose file log
+                logger = FileLogger(verbose=False, silent=True)
                 res = run_diagnostics(d, origin_ip=args.origin, expected_ns=args.expect)
                 
                 print(f"{res['domain']:<30} | {res['dns']:<12} | {res['http']:<15} | {res['tcp']:<6} | {str(res['dnssec']):<10}")
@@ -552,11 +653,15 @@ def main():
         print(f"\n{Colors.OKGREEN}Batch Complete. Detailed reports in reports/{Colors.ENDC}")
         
     elif args.domain:
-        # Single Mode
-        logger = FileLogger(silent=False)
+        # Single Mode - Default is concise (only summary), verbose is --verbose
+        logger = FileLogger(verbose=args.verbose, silent=False)
         target_domain = args.domain.replace("http://", "").replace("https://", "").strip("/")
+        
+        # We need to print "Diagnosing..." if verbose, otherwise it's handled in run_diagnostics
         run_diagnostics(target_domain, args.origin, args.expect)
-        print(f"\n{Colors.OKBLUE}📄 Report saved.{Colors.ENDC}")
+        
+        if not args.verbose:
+            print(f"\n{Colors.OKBLUE}📄 Full report saved to reports/ folder.{Colors.ENDC}")
         
     else:
         parser.print_help()
