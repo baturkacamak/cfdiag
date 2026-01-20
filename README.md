@@ -85,5 +85,16 @@ If you know your server's real IP address, use the `--origin` flag. This allows 
 ./cfdiag --update
 ```
 
+## Development
+
+If you want to contribute or modify the tool:
+
+1.  **Run Tests:** Always run the test suite before committing.
+    ```bash
+    ./pre-commit.sh
+    # or
+    python3 test_cfdiag.py
+    ```
+
 ## License
 MIT
