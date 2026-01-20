@@ -9,10 +9,14 @@ import os
 class TestCFDiag(unittest.TestCase):
 
     def setUp(self):
-        self.log_patcher = patch('cfdiag.logger', MagicMock())
-        self.mock_logger = self.log_patcher.start()
-        self.mock_logger.html_data = {"domain": "test", "timestamp": "now", "steps": [], "summary": []}
-        self.mock_logger.save_html = MagicMock()
+        # We need to mock the thread local storage or get_logger
+        self.log_patcher = patch('cfdiag.get_logger')
+        self.mock_get_logger = self.log_patcher.start()
+        
+        self.mock_logger_instance = MagicMock()
+        self.mock_get_logger.return_value = self.mock_logger_instance
+        self.mock_logger_instance.html_data = {"domain": "test", "timestamp": "now", "steps": [], "summary": []}
+        self.mock_logger_instance.save_html.return_value = True
 
     def tearDown(self):
         self.log_patcher.stop()
@@ -65,15 +69,14 @@ strict-transport-security: max-age=31536000
         mock_http.return_value = ("SUCCESS", 200, False, {})
         mock_tcp.return_value = True
         mock_run.return_value = (0, "Mock Output")
-        mock_hist.return_value = {"ttfb": 0.1} # Previous history
+        mock_hist.return_value = {"ttfb": 0.1} 
         
-        self.mock_logger.save_html.return_value = True
-        
-        with patch('os.makedirs'), patch('cfdiag.logger.save_to_file'):
-             cfdiag.run_diagnostics("example.com", export_metrics=True)
+        with patch('os.makedirs'):
+             # Call the IMPL function directly
+             cfdiag.run_diagnostics_impl("example.com", export_metrics=True)
              
         mock_metrics.assert_called()
-        mock_hist.assert_called()
+        self.mock_logger_instance.save_html.assert_called()
 
 if __name__ == '__main__':
     unittest.main()
