@@ -42,7 +42,7 @@ class FileLogger:
     def add_html_step(self, title: str, status: str, details: str) -> None:
         if "steps" not in self.html_data:
              self.html_data["steps"] = []
-        self.html_data["steps"].append({ 
+        self.html_data["steps"].append({
             "title": title,
             "status": status,
             "details": details
@@ -97,6 +97,83 @@ class FileLogger:
         html_parts.append("</ul></div></div></body></html>")
         try:
             with open(filename, 'w') as f: f.write("\n".join(html_parts))
+            return True
+        except: return False
+
+    def save_markdown(self, filename: str) -> bool:
+        domain = self.html_data.get('domain', '')
+        ts = self.html_data.get('timestamp', '')
+        lines = []
+        lines.append(f"# cfdiag Report: {domain}")
+        lines.append(f"**Date:** {ts}")
+        lines.append("")
+        
+        lines.append("## Diagnostic Summary")
+        lines.append("| Check | Status |")
+        lines.append("|---|---|")
+        
+        summary = self.html_data.get("summary", [])
+        if isinstance(summary, list):
+            for line in summary:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    icon = "✅" if "PASS" in v or "OK" in v or "SUCCESS" in v else ("❌" if "FAIL" in v else "⚠️")
+                    lines.append(f"| {k.strip()} | {icon} {v.strip()} |")
+        
+        lines.append("")
+        lines.append("## Detailed Steps")
+        steps = self.html_data.get("steps", [])
+        if isinstance(steps, list):
+            for step in steps:
+                if isinstance(step, dict):
+                    status = step.get('status', 'INFO')
+                    title = step.get('title', '')
+                    details = step.get('details', '')
+                    icon = "✅" if status == "PASS" else ("❌" if status == "FAIL" else ("⚠️" if status == "WARN" else "ℹ️"))
+                    lines.append(f"### {icon} {title}")
+                    lines.append(f"**Status:** {status}")
+                    lines.append("```")
+                    lines.append(details)
+                    lines.append("```")
+                    lines.append("")
+        
+        try:
+            with open(filename, 'w') as f: f.write("\n".join(lines))
+            return True
+        except: return False
+
+    def save_junit(self, filename: str) -> bool:
+        domain = self.html_data.get('domain', '')
+        steps = self.html_data.get("steps", [])
+        
+        xml = []
+        xml.append('<?xml version="1.0" encoding="UTF-8"?>')
+        
+        failures = 0
+        tests = 0
+        testcases = []
+        
+        if isinstance(steps, list):
+            for step in steps:
+                if isinstance(step, dict):
+                    tests += 1
+                    status = step.get('status', 'INFO')
+                    title = step.get('title', '')
+                    details = step.get('details', '').replace("<", "&lt;").replace(">", "&gt;")
+                    
+                    case = f'<testcase name="{title}" classname="cfdiag.{domain}">' 
+                    if status == "FAIL":
+                        failures += 1
+                        case += f'<failure message="{status}">{details}</failure>'
+                    case += '</testcase>'
+                    testcases.append(case)
+        
+        xml.append(f'<testsuites><testsuite name="cfdiag" tests="{tests}" failures="{failures}">')
+        xml.extend(testcases)
+        xml.append('</testsuite></testsuites>')
+        
+        try:
+            with open(filename, 'w') as f: f.write("\n".join(xml))
             return True
         except: return False
 

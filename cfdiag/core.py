@@ -297,6 +297,10 @@ def main() -> None:
     parser.add_argument("--completion", choices=['bash', 'zsh'], help="Generate shell completion")
     parser.add_argument("--grafana", action="store_true", help="Generate Grafana Dashboard JSON")
     parser.add_argument("--keylog", help="File to save SSL session keys (for Wireshark)")
+    parser.add_argument("--header", action="append", help="Custom HTTP Header (e.g. 'X-Foo: Bar')")
+    parser.add_argument("--timeout", type=int, default=10, help="Connection timeout in seconds")
+    parser.add_argument("--markdown", action="store_true", help="Generate Markdown Report")
+    parser.add_argument("--junit", action="store_true", help="Generate JUnit XML Report")
     
     args = parser.parse_args()
     
@@ -319,9 +323,11 @@ def main() -> None:
         'ipv4': args.ipv4,
         'ipv6': args.ipv6,
         'proxy': args.proxy,
-        'keylog_file': args.keylog
+        'keylog_file': args.keylog,
+        'headers': args.header,
+        'timeout': args.timeout
     }
-
+    
     if args.file:
         if not os.path.exists(args.file):
             print(f"File not found: {args.file}")
@@ -333,7 +339,7 @@ def main() -> None:
             
         print(f"\n{Colors.BOLD}{Colors.HEADER}=== BATCH MODE STARTED ({len(domains)} domains, {args.threads} threads) ==={Colors.ENDC}\n")
         dns_header = "PROPAGATION" if args.expect else "DNS"
-        print(f"{ 'DOMAIN':<30} | {dns_header:<12} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
+        print(f"{'DOMAIN':<30} | {dns_header:<12} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
         print("-" * 85)
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:

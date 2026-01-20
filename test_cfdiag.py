@@ -18,7 +18,10 @@ class TestCFDiag(unittest.TestCase):
         self.mock_get_logger = self.log_patcher.start()
         
         self.mock_logger_instance = MagicMock()
-        self.mock_logger_instance.html_data = {"domain": "test", "timestamp": "now", "steps": [], "summary": []}
+        # Mock FileLogger methods to avoid real I/O if possible, 
+        # but for testing save_markdown we might want to check the string construction.
+        # We can mock the save_to_file and save_html methods.
+        self.mock_logger_instance.html_data = {"domain": "test", "timestamp": "now", "steps": [], "summary": ["DNS: PASS"]}
         self.mock_logger_instance.save_html.return_value = True
         
         self.mock_get_logger.return_value = self.mock_logger_instance
@@ -51,15 +54,11 @@ class TestCFDiag(unittest.TestCase):
 
     @patch('cfdiag.network.ssl.create_default_context')
     def test_ssl_keylog(self, mock_ssl_context):
-        # Mock context to have keylog_file
         self.mock_get_context.return_value = {'keylog_file': 'keys.log'}
         mock_ctx = MagicMock()
         mock_ssl_context.return_value = mock_ctx
-        
         with patch('cfdiag.network.socket.create_connection'):
              cfdiag.network.step_ssl("example.com")
-             
-        # Assert keylog_filename was set
         self.assertEqual(mock_ctx.keylog_filename, 'keys.log')
 
     def test_grafana_output(self):
@@ -68,6 +67,27 @@ class TestCFDiag(unittest.TestCase):
         cfdiag.core.generate_grafana()
         sys.stdout = sys.__stdout__
         self.assertIn("cfdiag_http_ttfb_seconds", capturedOutput.getvalue())
+
+    def test_markdown_generation(self):
+        # We need to test the logic in FileLogger class, not the mock
+        l = cfdiag.reporting.FileLogger()
+        l.html_data = {"domain": "example.com", "timestamp": "now", "summary": ["DNS: PASS"], "steps": []}
+        
+        with patch('builtins.open', unittest.mock.mock_open()) as mock_file:
+            l.save_markdown("report.md")
+            mock_file().write.assert_called()
+            args = mock_file().write.call_args[0][0]
+            self.assertIn("# cfdiag Report: example.com", args)
+            self.assertIn("| DNS | ✅ PASS |", args)
+
+    def test_junit_generation(self):
+        l = cfdiag.reporting.FileLogger()
+        l.html_data = {"domain": "example.com", "timestamp": "now", "summary": [], "steps": [{"title": "DNS", "status": "PASS", "details": ""}]}
+        
+        with patch('builtins.open', unittest.mock.mock_open()) as mock_file:
+            l.save_junit("junit.xml")
+            args = mock_file().write.call_args[0][0]
+            self.assertIn('<testcase name="DNS" classname="cfdiag.example.com">', args)
 
 if __name__ == '__main__':
     unittest.main()

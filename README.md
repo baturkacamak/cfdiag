@@ -27,10 +27,14 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 *   **High-Speed Batch Mode:** Scan hundreds of domains in seconds using multi-threading (`--threads 50`).
 *   **Proxy Support:** Run diagnostics from behind a corporate proxy (`--proxy http://...`).
 *   **IP Version Forcing:** Force IPv4 (`--ipv4`) or IPv6 (`--ipv6`) to isolate stack issues.
+*   **Custom Headers:** Inject custom headers (`--header "X-Debug: 1"`) to bypass caches or test WAF rules.
+*   **Custom Timeouts:** Set connection timeout (`--timeout 5`) for faster scanning or slow links.
 *   **Metrics Export:** Generates Prometheus-compatible metrics (`metrics.prom`) for monitoring integration.
 *   **Grafana Dashboard:** Generate a JSON dashboard for visualizing metrics (`--grafana`).
 *   **History & Trending:** Automatically compares latency (TTFB) with the previous run to detect performance degradation.
 *   **JSON Output:** Output full results as JSON for automation (`--json`).
+*   **Markdown Output:** Output report as Markdown for easy sharing (`--markdown`).
+*   **JUnit XML:** Output test results for CI/CD integration (`--junit`).
 *   **Shell Completion:** Generate auto-completion scripts (`--completion bash`).
 
 ## Installation
@@ -56,12 +60,6 @@ cd cfdiag
 python3 -m cfdiag example.com
 ```
 
-### Option 5: Docker
-```bash
-docker build -t cfdiag .
-docker run --rm cfdiag example.com
-```
-
 ## Usage
 
 ### Basic Usage
@@ -71,15 +69,15 @@ cfdiag example.com
 ```
 
 ### Troubleshooting
-Force IPv4 or use a Proxy:
+Force IPv4, use a Proxy, or set a short timeout:
 ```bash
-cfdiag example.com --ipv4 --proxy http://10.0.0.1:8080
+cfdiag example.com --ipv4 --proxy http://10.0.0.1:8080 --timeout 5
 ```
 
 ### Power User Usage
-Check direct origin connectivity, propagation, and enable metrics:
+Check direct origin connectivity with custom headers:
 ```bash
-cfdiag example.com --origin 192.0.2.123 --expect ns1.digitalocean.com --metrics
+cfdiag example.com --origin 192.0.2.123 --header "X-My-Header: test"
 ```
 
 ### Expert Mode (Wireshark Decryption)
@@ -88,10 +86,11 @@ Dump SSL session keys to file:
 cfdiag example.com --keylog ssl-keys.log
 ```
 
-### Monitoring Setup
-Generate Grafana Dashboard:
+### Reporting
+Generate reports in various formats:
 ```bash
-cfdiag --grafana > dashboard.json
+cfdiag example.com --markdown > report.md
+cfdiag example.com --junit > junit.xml
 ```
 
 ### Batch Mode (High Performance)

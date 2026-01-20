@@ -26,6 +26,18 @@ def check_dependencies() -> None:
         sys.exit(1)
 
 def run_command(command: str, timeout: int = 30, show_output: bool = True, log_output_to_file: bool = True) -> Tuple[Optional[int], str]:
+    from .utils import get_context
+    ctx = get_context()
+    if ctx.get('timeout'):
+        # Allow override but generally respect context
+        # If the caller passed a specific timeout (like 60 for trace), maybe keep it?
+        # But if user says --timeout 5, they want 5.
+        # Let's say explicit > context? No, Context > Default.
+        # But run_command default is 30.
+        # If timeout is 30 (default), use context.
+        if timeout == 30:
+            timeout = int(ctx.get('timeout'))
+
     l = get_logger()
     try:
         process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -333,10 +345,13 @@ def step_security_headers(domain: str) -> None:
 
 def step_http3_udp(domain: str) -> bool:
     print_subheader("8. HTTP/3 (QUIC) Check")
+    from .utils import get_context
+    ctx = get_context()
+    timeout = int(ctx.get('timeout', 2))
     l = get_logger()
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.settimeout(2)
+        sock.settimeout(timeout)
         sock.sendto(b"PING", (domain, 443))
         print_success("UDP 443 Open.")
         if l: l.add_html_step("HTTP/3", "PASS", "UDP 443 Open")
@@ -351,12 +366,13 @@ def step_ssl(domain: str) -> bool:
     
     from .utils import get_context
     ctx = get_context()
+    timeout = int(ctx.get('timeout', 5))
     if ctx.get('keylog_file'):
         context.keylog_filename = ctx.get('keylog_file') # type: ignore
         
     l = get_logger()
     try:
-        with socket.create_connection((domain, 443), timeout=5) as sock:
+        with socket.create_connection((domain, 443), timeout=timeout) as sock:
             with context.wrap_socket(sock, server_hostname=domain) as ssock:
                 print_success(f"Expiry: {ssock.getpeercert().get('notAfter')}") # type: ignore
                 if l: l.add_html_step("SSL", "PASS", f"Expiry: {ssock.getpeercert().get('notAfter')}") # type: ignore
@@ -382,9 +398,12 @@ def step_ocsp(domain: str) -> None:
 
 def step_tcp(domain: str) -> bool:
     print_subheader("10. TCP Connectivity")
+    from .utils import get_context
+    ctx = get_context()
+    timeout = int(ctx.get('timeout', 5))
     l = get_logger()
     try:
-        with socket.create_connection((domain, 443), timeout=5):
+        with socket.create_connection((domain, 443), timeout=timeout):
             print_success("Connected.")
             if l: l.add_html_step("TCP", "PASS", "Connected")
             return True

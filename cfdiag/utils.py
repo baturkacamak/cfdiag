@@ -2,7 +2,7 @@ import os
 import threading
 from typing import Dict, Any
 
-VERSION = "3.2.0"
+VERSION = "3.4.0"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -44,6 +44,13 @@ def get_curl_flags() -> str:
     if ctx.get('ipv4'): flags.append("-4")
     if ctx.get('ipv6'): flags.append("-6")
     if ctx.get('proxy'): flags.append(f"--proxy {ctx.get('proxy')}")
+    if ctx.get('headers'):
+        for h in ctx.get('headers'):
+            flags.append(f'-H "{h}"')
+    if ctx.get('timeout'):
+        # Curl connection timeout
+        flags.append(f"--connect-timeout {ctx.get('timeout')}")
+        flags.append(f"--max-time {int(ctx.get('timeout')) * 2}") # Total time slightly longer
     return " " + " ".join(flags) if flags else ""
 
 class Colors:
