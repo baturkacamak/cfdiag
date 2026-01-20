@@ -13,6 +13,7 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 *   **Domain Registration Status:** Checks RDAP data to see if the domain is active, suspended, or expired.
 *   **ISP/ASN Detection:** Automatically identifies the hosting provider (e.g., AWS, DigitalOcean) of the resolved IP.
 *   **HTTP Inspection:** Smarter than just `ping`. Detects specific HTTP error codes (522, 525, 502) and analyzes headers.
+*   **Performance Metrics:** Measures **TTFB** (Time To First Byte) and Connect Time to identify backend slowness vs network lag.
 *   **HTTP/3 (QUIC) Check:** Verifies if UDP Port 443 is open/filtered.
 *   **SSL/TLS Handshake:** Verifies certificate validity and expiration dates using native Python SSL libraries.
 *   **TCP Connectivity:** Checks if port 443 is actually open using native sockets (no `nc` required).
@@ -26,6 +27,7 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 
 ### Utilities
 *   **Batch Mode:** Scan a list of domains from a file: `cfdiag --file domains.txt`
+*   **Config File:** Save your preferences (like origin IP) in `~/.cfdiag.json`.
 *   **Self-Update:** Run with `--update` to automatically pull the latest version from GitHub.
 *   **Reporting:** Beautiful console output and clean Markdown file logs in `reports/`.
 
@@ -49,72 +51,54 @@ python cfdiag.py example.com
 ```
 
 ### Docker
-If you don't want to install dependencies manually, use Docker:
-
 ```bash
-# Build
 docker build -t cfdiag .
-
-# Run
 docker run --rm cfdiag example.com
 ```
 
 ## Usage
 
 ### Basic Usage
-Run a full diagnostic on a domain:
+Run a diagnostic (summary only):
 ```bash
 ./cfdiag example.com
 ```
 
-### Check DNS Propagation
-Verify if your nameserver change has propagated globally:
+Show verbose output (all steps):
 ```bash
-./cfdiag example.com --expect ns1.digitalocean.com
+./cfdiag example.com --verbose
+```
+
+### Configuration File
+Create a `.cfdiag.json` in your home directory or current folder:
+```json
+{
+  "profiles": {
+    "prod": { "domain": "example.com", "origin": "1.2.3.4" }
+  }
+}
+```
+Run with profile:
+```bash
+./cfdiag --profile prod
+```
+
+### Power User Usage
+Check direct origin connectivity and propagation:
+```bash
+./cfdiag example.com --origin 192.0.2.123 --expect ns1.digitalocean.com
 ```
 
 ### Batch Mode
-Check multiple domains at once (supports `--expect` too):
+Check multiple domains at once:
 ```bash
 ./cfdiag --file my_domains.txt
 ```
-
-### Power User Usage (Direct Origin Test)
-If you know your server's real IP address, use the `--origin` flag. This allows the tool to attempt a direct connection, bypassing Cloudflare's proxy.
-
-```bash
-./cfdiag example.com --origin 192.0.2.123
-```
-
-**Why is this important?**
-*   If `cfdiag` to domain **FAILS** (522 Timeout)...
-*   BUT `cfdiag` to `--origin` **SUCCEEDS**...
-*   **Conclusion:** Your server is UP, but your firewall is blocking Cloudflare's IPs. Whitelist them!
 
 ### Update Tool
 ```bash
 ./cfdiag --update
 ```
-
-## Development
-
-If you want to contribute or modify the tool:
-
-1.  **Setup:** Run this once to install the git hooks.
-    ```bash
-    ./setup_dev.sh
-    ```
-
-2.  **Workflow:** The tests will now run automatically when you commit.
-    ```bash
-    git commit -m "My change"
-    # Tests run... if pass, commit succeeds.
-    ```
-
-3.  **Manual Test:** You can also run tests manually:
-    ```bash
-    ./scripts/run_tests.sh
-    ```
 
 ## License
 MIT

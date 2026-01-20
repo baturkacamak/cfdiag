@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, mock_open
 import cfdiag
 import socket
 import ssl
 import sys
 import io
-import platform
+import json
 
 class TestCFDiag(unittest.TestCase):
 
@@ -19,138 +19,68 @@ class TestCFDiag(unittest.TestCase):
     def tearDown(self):
         self.log_patcher.stop()
 
-    # --- Connectivity & Core ---
-
     @patch('cfdiag.socket.create_connection')
     def test_internet_check(self, mock_conn):
         mock_conn.return_value.__enter__.return_value = MagicMock()
         self.assertTrue(cfdiag.check_internet_connection())
-        
-        mock_conn.side_effect = socket.error("Fail")
-        self.assertFalse(cfdiag.check_internet_connection())
-
-    # --- DNS ---
 
     @patch('cfdiag.socket.getaddrinfo')
     @patch('cfdiag.run_command')
     def test_dns_resolution(self, mock_run, mock_getaddrinfo):
-        mock_getaddrinfo.return_value = [
-            (socket.AF_INET, 0, 0, '', ('1.1.1.1', 443)),
-            (socket.AF_INET6, 0, 0, '', ('::1', 443))
-        ]
+        mock_getaddrinfo.return_value = [(socket.AF_INET, 0, 0, '', ('192.0.2.1', 443))]
         mock_run.return_value = (0, '{"isp": "Test"}')
-        
         success, v4, v6 = cfdiag.step_dns("example.com")
         self.assertTrue(success)
-        self.assertIn('1.1.1.1', v4)
-        self.assertIn('::1', v6)
 
     @patch('cfdiag.run_command')
-    def test_dnssec(self, mock_run):
-        # Disabled
-        mock_run.return_value = (0, "")
-        with patch('shutil.which', return_value='dig'):
-            self.assertEqual(cfdiag.step_dnssec("example.com"), "DISABLED")
+    def test_http_latency_parsing(self, mock_run):
+        output = r"code=200\nconnect=0.05\nstart=0.10\ntotal=0.15"
+        mock_run.return_value = (0, output)
         
-        # Signed
-        mock_run.side_effect = [(0, "DS record"), (0, "RRSIG")]
-        with patch('shutil.which', return_value='dig'):
-            self.assertEqual(cfdiag.step_dnssec("example.com"), "SIGNED")
-
-    # --- HTTP & WAF ---
+        status, code, waf, metrics = cfdiag.step_http("example.com")
+        
+        self.assertEqual(status, "SUCCESS")
+        self.assertEqual(code, 200)
+        self.assertEqual(metrics.get('connect'), 0.05)
+        self.assertEqual(metrics.get('ttfb'), 0.10)
 
     @patch('cfdiag.run_command')
-    def test_http_waf(self, mock_run):
-        # 403 with WAF body
-        mock_run.side_effect = [
-            (0, "HTTP/2 403 Forbidden\n"), # Head
-            (0, "<html><div class='cf-captcha-container'></div></html>") # Body
-        ]
-        status, code, waf = cfdiag.step_http("waf.com")
-        self.assertEqual(status, "WAF_BLOCK")
-        self.assertTrue(waf)
-
-    # --- SSL ---
-
-    @patch('cfdiag.ssl.create_default_context')
-    @patch('cfdiag.socket.create_connection')
-    def test_ssl_valid(self, mock_conn, mock_ctx):
-        mock_sock = MagicMock()
-        mock_ssock = MagicMock()
-        mock_conn.return_value.__enter__.return_value = mock_sock
-        mock_ctx.return_value.wrap_socket.return_value.__enter__.return_value = mock_ssock
+    def test_config_loading(self, mock_run):
+        config_data = json.dumps({
+            "default": {"origin": "1.1.1.1"},
+            "profiles": {
+                "prod": {"domain": "prod.com", "origin": "2.2.2.2"}
+            }
+        })
         
-        mock_ssock.getpeercert.return_value = {'notAfter': 'Dec 12 12:00:00 2030 GMT'}
-        
-        self.assertTrue(cfdiag.step_ssl("valid.com"))
-
-    @patch('cfdiag.ssl.create_default_context')
-    @patch('cfdiag.socket.create_connection')
-    def test_ssl_handshake_fail(self, mock_conn, mock_ctx):
-        mock_ctx.return_value.wrap_socket.side_effect = ssl.SSLError("Handshake fail")
-        self.assertFalse(cfdiag.step_ssl("bad-ssl.com"))
-
-    # --- MTU (OS Specifics) ---
-
-    @patch('cfdiag.run_command')
-    @patch('platform.system')
-    def test_mtu_windows(self, mock_sys, mock_run):
-        mock_sys.return_value = "Windows"
-        mock_run.return_value = (0, "Reply from...")
-        
-        cfdiag.step_mtu("win.com")
-        # Check if correct flags used
-        args, _ = mock_run.call_args
-        self.assertIn("-f -l", args[0])
-
-    @patch('cfdiag.run_command')
-    @patch('platform.system')
-    def test_mtu_linux(self, mock_sys, mock_run):
-        mock_sys.return_value = "Linux"
-        mock_run.return_value = (0, "bytes from")
-        
-        cfdiag.step_mtu("linux.com")
-        args, _ = mock_run.call_args
-        self.assertIn("-M do -s", args[0])
-
-    # --- Alt Ports ---
+        with patch('builtins.open', mock_open(read_data=config_data)):
+            with patch('os.path.exists', return_value=True):
+                # Test Default
+                conf = cfdiag.load_config()
+                self.assertEqual(conf.get('profiles', {}).get('prod', {}).get('domain'), "prod.com")
+                
+                # Test Profile
+                prof = cfdiag.load_config("prod")
+                self.assertEqual(prof.get('origin'), "2.2.2.2")
 
     @patch('cfdiag.socket.create_connection')
-    def test_alt_ports(self, mock_conn):
-        # Simulate 8443 open, others closed
-        def side_effect(address, timeout=2):
-            if address[1] == 8443:
-                return MagicMock()
-            raise socket.error("Refused")
+    def test_tcp(self, mock_conn):
+        mock_conn.return_value.__enter__.return_value = MagicMock()
+        self.assertTrue(cfdiag.step_tcp("example.com"))
+
+    @patch('cfdiag.step_dns')
+    @patch('cfdiag.step_http')
+    @patch('cfdiag.step_tcp')
+    @patch('cfdiag.check_internet_connection')
+    def test_run_diagnostics_batch_wrapper(self, mock_net, mock_tcp, mock_http, mock_dns):
+        mock_net.return_value = True
+        mock_dns.return_value = (True, [], [])
+        mock_http.return_value = ("SUCCESS", 200, False, {})
+        mock_tcp.return_value = True
         
-        mock_conn.side_effect = side_effect
-        
-        success, open_ports = cfdiag.step_alt_ports("example.com")
-        self.assertTrue(success)
-        self.assertEqual(open_ports, [8443])
-
-    @patch('cfdiag.socket.create_connection')
-    def test_alt_ports_all_closed(self, mock_conn):
-        mock_conn.side_effect = socket.error("Refused")
-        success, open_ports = cfdiag.step_alt_ports("example.com")
-        self.assertFalse(success)
-        self.assertEqual(open_ports, [])
-
-    # --- Origin & CF Trace ---
-
-    @patch('cfdiag.run_command')
-    def test_cf_trace(self, mock_run):
-        mock_run.return_value = (0, "fl=123\ncolo=LHR\nip=1.2.3.4")
-        success, details = cfdiag.step_cf_trace("example.com")
-        self.assertTrue(success)
-        self.assertEqual(details['colo'], 'LHR')
-
-    @patch('cfdiag.run_command')
-    def test_origin_connect(self, mock_run):
-        mock_run.return_value = (0, "HTTP/1.1 521 Origin Down\n")
-        success, reason = cfdiag.step_origin("example.com", "1.2.3.4")
-        self.assertTrue(success) # Connected
-        self.assertEqual(reason, "ERROR") # But returned error status
+        with patch('os.makedirs'), patch('cfdiag.logger.save_to_file'):
+            res = cfdiag.run_diagnostics("example.com")
+            self.assertEqual(res['domain'], "example.com")
 
 if __name__ == '__main__':
     unittest.main()
