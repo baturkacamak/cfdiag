@@ -97,8 +97,8 @@ class FileLogger:
             "steps": [],
             "summary": []
         }
-        # Fixed regex: escaped [ to [\
-        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\-_]|[[0-?]*[ -/]*[@-~])')
+        # Fixed regex: escaped [ to \[
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
         self.verbose = verbose 
         self.silent = silent   
 
