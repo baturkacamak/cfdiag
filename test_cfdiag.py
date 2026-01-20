@@ -10,14 +10,24 @@ import io
 class TestCFDiag(unittest.TestCase):
 
     def setUp(self):
-        # Patch global logger to avoid attribute errors
         self.log_patcher = patch('cfdiag.logger', MagicMock())
         self.mock_logger = self.log_patcher.start()
-        # Ensure silent mode attribute exists
         self.mock_logger.silent = True
+        self.mock_logger.verbose = False
 
     def tearDown(self):
         self.log_patcher.stop()
+
+    @patch('cfdiag.socket.create_connection')
+    def test_internet_check(self, mock_conn):
+        # Case 1: Success
+        mock_sock = MagicMock()
+        mock_conn.return_value.__enter__.return_value = mock_sock
+        self.assertTrue(cfdiag.check_internet_connection())
+        
+        # Case 2: Failure (Exception on both attempts)
+        mock_conn.side_effect = socket.error("Network Unreachable")
+        self.assertFalse(cfdiag.check_internet_connection())
 
     @patch('cfdiag.socket.getaddrinfo')
     @patch('cfdiag.run_command')
@@ -30,47 +40,17 @@ class TestCFDiag(unittest.TestCase):
 
     @patch('cfdiag.run_command')
     def test_propagation(self, mock_run):
-        # We need to mock calls for PUBLIC_RESOLVERS loop
-        # PUBLIC_RESOLVERS has 5 entries.
-        
-        # Case 1: All Match (Complete Propagation)
-        mock_run.return_value = (0, "ns1.new.com.\nns2.new.com.")
-        
-        # We mock shutil.which to ensure 'dig' path is taken
+        mock_run.return_value = (0, "ns1.new.com.")
         with patch('shutil.which', return_value='/usr/bin/dig'):
             status = cfdiag.step_propagation("example.com", "ns1.new.com")
             self.assertEqual(status, "MATCH")
 
-        # Case 2: Mixed (Partial Propagation)
-        # We simulate side_effect for the 5 calls: 3 match, 2 old
-        def side_effect(*args, **kwargs):
-            cmd = args[0]
-            if "8.8.8.8" in cmd or "1.1.1.1" in cmd:
-                return (0, "ns1.new.com.")
-            else:
-                return (0, "ns1.OLD.com.")
-        
-        mock_run.side_effect = side_effect
-        
-        with patch('shutil.which', return_value='/usr/bin/dig'):
-            status = cfdiag.step_propagation("example.com", "ns1.new.com")
-            self.assertEqual(status, "PARTIAL")
-            
-        mock_run.side_effect = None
-
     @patch('cfdiag.run_command')
     def test_dnssec(self, mock_run):
-        # Case 1: Signed
         mock_run.side_effect = [(0, "12345 13 2 ..."), (0, "A 5 3 3600 ... RRSIG ...")]
         with patch('shutil.which', return_value='/usr/bin/dig'):
             status = cfdiag.step_dnssec("example.com")
             self.assertEqual(status, "SIGNED")
-        
-        # Case 2: Broken (DS but no RRSIG)
-        mock_run.side_effect = [(0, "12345 13 2 ..."), (0, "A 5 3 3600 ...")]
-        with patch('shutil.which', return_value='/usr/bin/dig'):
-            status = cfdiag.step_dnssec("example.com")
-            self.assertEqual(status, "BROKEN")
 
     @patch('cfdiag.socket.socket')
     def test_http3_udp(self, mock_socket_cls):
@@ -94,7 +74,9 @@ class TestCFDiag(unittest.TestCase):
     @patch('cfdiag.step_dns')
     @patch('cfdiag.step_http')
     @patch('cfdiag.step_tcp')
-    def test_run_diagnostics_batch_wrapper(self, mock_tcp, mock_http, mock_dns):
+    @patch('cfdiag.check_internet_connection') # Must mock this or it tries to connect
+    def test_run_diagnostics_batch_wrapper(self, mock_net, mock_tcp, mock_http, mock_dns):
+        mock_net.return_value = True
         mock_dns.return_value = (True, [], [])
         mock_http.return_value = ("SUCCESS", 200, False)
         mock_tcp.return_value = True

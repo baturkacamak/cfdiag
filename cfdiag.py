@@ -32,7 +32,7 @@ import urllib.request
 
 # --- Configuration & Constants ---
 
-VERSION = "1.5.0"
+VERSION = "1.7.0"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -172,7 +172,6 @@ def run_command(command, timeout=30, show_output=True, log_output_to_file=True):
             line = process.stdout.readline()
             if not line and process.poll() is not None: break
             if line:
-                # Direct sys.stdout write for real-time output if verbose
                 if show_output and logger.verbose and not logger.silent: 
                     sys.stdout.write(line) 
                 output_lines.append(line)
@@ -186,6 +185,19 @@ def run_command(command, timeout=30, show_output=True, log_output_to_file=True):
     except Exception as e:
         logger.log_file(f"[ERROR] {e}")
         return -1, str(e)
+
+def check_internet_connection():
+    """
+    Sanity check to ensure the local machine has internet access.
+    Tries to connect to Cloudflare (1.1.1.1) and Google (8.8.8.8) DNS ports.
+    """
+    targets = [("1.1.1.1", 53), ("8.8.8.8", 53)]
+    for host, port in targets:
+        try:
+            with socket.create_connection((host, port), timeout=3): return True
+        except:
+            continue
+    return False
 
 # --- Feature: Self Update ---
 
@@ -233,7 +245,6 @@ def step_dns(domain):
             print_fail("DNS returned empty result.")
             return False, [], []
 
-        # ISP Check
         target_ip = ipv4[0] if ipv4 else (ipv6[0] if ipv6 else None)
         if target_ip and not target_ip.startswith(("192.168.", "10.", "127.", "::1")):
             c2, out2 = run_command(f"curl -s --connect-timeout 3 http://ip-api.com/json/{target_ip}", show_output=False)
@@ -257,12 +268,10 @@ def step_propagation(domain, expected_ns):
 
     total = len(PUBLIC_RESOLVERS)
     matches = 0
-    failures = 0
     
     logger.log_file(f"Target Nameserver Substring: {expected_ns}")
 
     for name, ip in PUBLIC_RESOLVERS:
-        # Construct command
         if shutil.which("dig"):
             cmd = f"dig @{ip} NS {domain} +short"
         elif os.name == 'nt':
@@ -283,7 +292,6 @@ def step_propagation(domain, expected_ns):
                     if "nameserver =" in line:
                         found_records.append(line.split("=")[1].strip())
             
-            # Check match
             for record in found_records:
                 if expected_ns.lower() in record.lower():
                     found = True
@@ -293,7 +301,6 @@ def step_propagation(domain, expected_ns):
                 matches += 1
                 print_success(f"{name:<10}: {Colors.WHITE}MATCH{Colors.ENDC} ({found_records[0] if found_records else 'OK'})")
             else:
-                failures += 1
                 res_str = found_records[0] if found_records else "No Records"
                 print_fail(f"{name:<10}: {Colors.FAIL}MISMATCH{Colors.ENDC} (Found: {res_str})")
         else:
@@ -314,13 +321,11 @@ def step_dnssec(domain):
     if not shutil.which("dig"):
         return None
 
-    # Check for DS record
     c, out = run_command(f"dig DS {domain} +short", log_output_to_file=True)
     if not out.strip():
         print_info(f"No DS record found. DNSSEC is likely {Colors.BOLD}DISABLED{Colors.ENDC}.")
         return "DISABLED"
     
-    # Check for RRSIG
     c, out = run_command(f"dig A {domain} +dnssec +short", log_output_to_file=True)
     
     if "RRSIG" in out:
@@ -361,7 +366,6 @@ def step_http(domain):
             except: pass
             
             if status in [403, 503]:
-                # Check WAF
                 c2, out2 = run_command(f"curl -s -A 'Mozilla/5.0' --connect-timeout 5 https://{domain}", show_output=False)
                 if c2 == 0 and any(x in out2 for x in ["Just a moment...", "cf-captcha-container", "challenge-platform"]):
                     waf = True
@@ -465,43 +469,36 @@ def step_origin(domain, ip):
 # --- Orchestrator ---
 
 def run_diagnostics(domain, origin_ip=None, expected_ns=None):
-    
-    # Setup Log File
     reports_dir = "reports"
     if not os.path.exists(reports_dir): os.makedirs(reports_dir)
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     log_file = os.path.join(reports_dir, f"{domain}_{timestamp}.txt")
     
-    # In single mode, this header prints to console. In silent mode, only to file.
-    logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}DIAGNOSING: {domain}{Colors.ENDC}", force=True) # Always show "Diagnosing..."
+    logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}DIAGNOSING: {domain}{Colors.ENDC}", force=True)
     logger.log_file(f"# DIAGNOSIS: {domain}\nDate: {timestamp}")
 
-    # Run Steps
     dns_ok, ipv4, ipv6 = step_dns(domain)
-    
-    prop_status = "N/A"
-    if expected_ns:
-        prop_status = step_propagation(domain, expected_ns)
-        
+    prop_status = step_propagation(domain, expected_ns) if expected_ns else "N/A"
     dnssec_status = step_dnssec(domain)
     step_domain_status(domain)
-    
     http_res = step_http(domain)
     step_http3_udp(domain)
     
     ssl_ok = step_ssl(domain)
     tcp_ok = step_tcp(domain)
     mtu_ok = step_mtu(domain)
+    
+    alt_ports_res = (False, [])
+    if not tcp_ok or http_res[1] == 0: 
+        alt_ports_res = step_alt_ports(domain)
+        
     step_traceroute(domain)
     cf_trace_ok = step_cf_trace(domain)
-    step_cf_forced(domain)
+    cf_ok = step_cf_forced(domain)
     
     origin_res = None
-    if origin_ip:
-        origin_res = step_origin(domain, origin_ip)
 
-    # Save
-    generate_summary(domain, (dns_ok, ipv4, ipv6), http_res, tcp_ok, cf_trace_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res, (False, []))
+    generate_summary(domain, (dns_ok, ipv4, ipv6), http_res, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res, alt_ports_res)
     logger.save_to_file(log_file)
     
     return {
@@ -514,7 +511,6 @@ def run_diagnostics(domain, origin_ip=None, expected_ns=None):
     }
 
 def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res):
-    # This header prints to console ALWAYS, effectively being the "Report"
     logger.log_console(f"\n{Colors.BOLD}{Colors.HEADER}{SEPARATOR}", force=True)
     logger.log_console(f" DIAGNOSTIC SUMMARY: {domain}", force=True)
     logger.log_console(f"{SEPARATOR}{Colors.ENDC}", force=True)
@@ -524,7 +520,6 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
     
     conclusions = []
     
-    # DNS Analysis
     dns_ok, ipv4, ipv6 = dns_res
     if not dns_ok:
         conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} DNS Resolution failed.",
@@ -533,7 +528,6 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
         conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} DNS is resolving correctly.",
                             "[PASS] DNS is resolving correctly."))
 
-    # SSL
     if ssl_res:
          conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} SSL Certificate is valid.",
                              "[PASS] SSL Certificate is valid."))
@@ -541,7 +535,6 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
          conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} SSL Certificate information could not be verified.",
                              "[WARN] SSL Certificate information could not be verified."))
 
-    # TCP/Network Analysis
     if tcp_res:
          conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} TCP (Port 443) is open.",
                              "[PASS] TCP (Port 443) is open."))
@@ -549,9 +542,7 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
          conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} TCP connection failed.",
                              "[CRITICAL] TCP connection failed."))
 
-    # HTTP Analysis
     http_status, http_code, is_waf = http_res
-    
     if http_status == "SUCCESS":
         conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} HTTP requests are working (Code {http_code}).",
                             f"[PASS] HTTP requests are working (Code {http_code})."))
@@ -570,14 +561,10 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
          elif http_code == 525:
              conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 525: SSL Handshake Failed with Origin.",
                                  "[ALERT] Cloudflare 525: SSL Handshake Failed with Origin."))
-         elif http_code == 502:
-             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 502: Bad Gateway (Origin invalid response/down).",
-                                 "[ALERT] Cloudflare 502: Bad Gateway (Origin invalid response/down)."))
     elif http_status == "TIMEOUT":
         conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} HTTP Request Timed Out (Potential 522).",
                             "[CRITICAL] HTTP Request Timed Out (Potential 522)."))
 
-    # Direct Origin
     if origin_res:
         connected, reason = origin_res
         if connected and reason == "SUCCESS":
@@ -594,15 +581,12 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
              conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[DIAGNOSIS]{Colors.ENDC} Origin Server is DOWN or Unreachable.",
                                  "[DIAGNOSIS] Origin Server is DOWN or Unreachable."))
 
-    # Edge Reachability
     if cf_res or cf_trace_res[0]:
         conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Cloudflare Edge Network is reachable.",
                             "[PASS] Cloudflare Edge Network is reachable."))
 
     for console_msg, file_msg in conclusions:
-        # Force these to print even in default (non-verbose) mode
         logger.log(console_msg, file_msg=file_msg, force=True)
-    
     logger.log_console(f"\n{Colors.GREY}{SEPARATOR}{Colors.ENDC}", force=True)
 
 def main():
@@ -626,10 +610,16 @@ def main():
 
     if args.no_color: Colors.disable()
 
+    # Pre-flight Check
+    if not check_internet_connection():
+        print(f"\n{Colors.FAIL}{Colors.BOLD}[CRITICAL] No Internet Connection.{Colors.ENDC}")
+        print("Cannot reach Cloudflare (1.1.1.1) or Google (8.8.8.8).")
+        print("Please check your local network settings and try again.")
+        sys.exit(1)
+
     check_dependencies()
 
     if args.file:
-        # Batch Mode
         if not os.path.exists(args.file):
             print(f"File not found: {args.file}")
             sys.exit(1)
@@ -643,26 +633,16 @@ def main():
             for line in f:
                 d = line.strip()
                 if not d: continue
-                
-                # Silent console, but verbose file log
                 logger = FileLogger(verbose=False, silent=True)
                 res = run_diagnostics(d, origin_ip=args.origin, expected_ns=args.expect)
-                
                 print(f"{res['domain']:<30} | {res['dns']:<12} | {res['http']:<15} | {res['tcp']:<6} | {str(res['dnssec']):<10}")
-        
         print(f"\n{Colors.OKGREEN}Batch Complete. Detailed reports in reports/{Colors.ENDC}")
-        
     elif args.domain:
-        # Single Mode - Default is concise (only summary), verbose is --verbose
         logger = FileLogger(verbose=args.verbose, silent=False)
         target_domain = args.domain.replace("http://", "").replace("https://", "").strip("/")
-        
-        # We need to print "Diagnosing..." if verbose, otherwise it's handled in run_diagnostics
         run_diagnostics(target_domain, args.origin, args.expect)
-        
         if not args.verbose:
             print(f"\n{Colors.OKBLUE}📄 Full report saved to reports/ folder.{Colors.ENDC}")
-        
     else:
         parser.print_help()
 
