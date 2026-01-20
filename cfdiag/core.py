@@ -35,7 +35,7 @@ def load_config(profile_name: Optional[str] = None) -> Dict[str, Any]:
     if profile_name: return config.get("profiles", {}).get(profile_name, {}) # type: ignore
     return config
 
-def self_update() -> None: 
+def self_update() -> None:
     import urllib.request
     import re
     import sys
@@ -49,15 +49,17 @@ def self_update() -> None:
             match = re.search(r'VERSION = "([\d\.]+)"', new_code)
             if match and match.group(1) > VERSION:
                 print(f"New version found: {match.group(1)}")
-                # This self-update mechanism relies on the single-file structure.
-                # In package mode, this is harder. We might deprecate it or rely on pip.
                 print("Please update via 'pip install --upgrade cfdiag' or your package manager.")
             else:
                 print("You are already running the latest version.")
     except Exception as e:
         print(f"Update failed: {e}")
 
-def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res, dnssec_status, prop_status, history_diff) -> None: 
+def generate_grafana() -> None:
+    from .dashboard import GRAFANA_JSON
+    print(GRAFANA_JSON)
+
+def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res, dnssec_status, prop_status, history_diff) -> None:
     l = get_logger()
     if not l: return
     l.log_console(f"\n{Colors.BOLD}{Colors.HEADER}{SEPARATOR}", force=True)
@@ -227,9 +229,9 @@ _cfdiag()
 {
     local cur prev opts
     COMPREPLY=()
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion"
+    cur=\"${COMP_WORDS[COMP_CWORD]}\"
+    prev=\"${COMP_WORDS[COMP_CWORD-1]}\" 
+    opts=\"--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion --grafana --keylog\"
 
     if [[ ${cur} == -* ]] ; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -261,6 +263,8 @@ _cfdiag() {
         '--proxy[HTTP Proxy URL]:url'
         '--json[Output JSON to stdout]'
         '--completion[Generate shell completion]:(bash zsh)'
+        '--grafana[Generate Grafana Dashboard JSON]'
+        '--keylog[SSL Keylog file]:filename:_files'
     )
     _arguments "${args[@]}"
 }
@@ -291,6 +295,8 @@ def main() -> None:
     parser.add_argument("--proxy", help="Use HTTP Proxy (e.g. http://1.2.3.4:8080)")
     parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
     parser.add_argument("--completion", choices=['bash', 'zsh'], help="Generate shell completion")
+    parser.add_argument("--grafana", action="store_true", help="Generate Grafana Dashboard JSON")
+    parser.add_argument("--keylog", help="File to save SSL session keys (for Wireshark)")
     
     args = parser.parse_args()
     
@@ -298,6 +304,7 @@ def main() -> None:
     if args.no_color: Colors.disable()
     if args.diff: compare_reports(args.diff[0], args.diff[1]); return
     if args.completion: generate_completion(args.completion); return
+    if args.grafana: generate_grafana(); return
 
     config = load_config(args.profile)
     domain = args.domain or config.get("domain")
@@ -311,7 +318,8 @@ def main() -> None:
     ctx = {
         'ipv4': args.ipv4,
         'ipv6': args.ipv6,
-        'proxy': args.proxy
+        'proxy': args.proxy,
+        'keylog_file': args.keylog
     }
 
     if args.file:
@@ -325,7 +333,7 @@ def main() -> None:
             
         print(f"\n{Colors.BOLD}{Colors.HEADER}=== BATCH MODE STARTED ({len(domains)} domains, {args.threads} threads) ==={Colors.ENDC}\n")
         dns_header = "PROPAGATION" if args.expect else "DNS"
-        print(f"{'DOMAIN':<30} | {dns_header:<12} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
+        print(f"{ 'DOMAIN':<30} | {dns_header:<12} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
         print("-" * 85)
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:

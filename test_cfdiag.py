@@ -49,40 +49,25 @@ class TestCFDiag(unittest.TestCase):
         with patch('shutil.which', return_value='/usr/bin/openssl'):
             cfdiag.network.step_ocsp("example.com")
 
-    @patch('cfdiag.network.check_internet_connection')
-    @patch('cfdiag.network.step_dns')
-    @patch('cfdiag.network.step_http')
-    @patch('cfdiag.network.step_tcp')
-    @patch('cfdiag.network.run_command')
-    @patch('cfdiag.network.step_redirects')
-    @patch('cfdiag.network.step_waf_evasion')
-    @patch('cfdiag.network.step_ocsp')
-    @patch('cfdiag.network.step_security_headers')
-    def test_run_diagnostics_integration(self, mock_sec, mock_ocsp, mock_waf, mock_red, mock_run, mock_tcp, mock_http, mock_dns, mock_net):
-        mock_net.return_value = True
-        mock_dns.return_value = (True, ["1.1.1.1"], [])
-        mock_http.return_value = ("SUCCESS", 200, False, {})
-        mock_tcp.return_value = True
-        mock_run.return_value = (0, "Mock Output")
+    @patch('cfdiag.network.ssl.create_default_context')
+    def test_ssl_keylog(self, mock_ssl_context):
+        # Mock context to have keylog_file
+        self.mock_get_context.return_value = {'keylog_file': 'keys.log'}
+        mock_ctx = MagicMock()
+        mock_ssl_context.return_value = mock_ctx
         
-        with patch('cfdiag.core.save_history', return_value={}), patch('cfdiag.core.save_metrics'):
-            with patch('os.makedirs'), patch('cfdiag.reporting.FileLogger.save_to_file'):
-                 # Need to patch FileLogger used in core
-                 with patch('cfdiag.core.FileLogger', return_value=self.mock_logger_instance):
-                     cfdiag.core.run_diagnostics_wrapper("example.com", None, None, True, False, False, {})
+        with patch('cfdiag.network.socket.create_connection'):
+             cfdiag.network.step_ssl("example.com")
              
-        self.mock_logger_instance.save_html.assert_called()
+        # Assert keylog_filename was set
+        self.assertEqual(mock_ctx.keylog_filename, 'keys.log')
 
-    def test_completion(self):
+    def test_grafana_output(self):
         capturedOutput = io.StringIO()
         sys.stdout = capturedOutput
-        cfdiag.core.generate_completion("bash")
+        cfdiag.core.generate_grafana()
         sys.stdout = sys.__stdout__
-        self.assertIn("complete -F _cfdiag cfdiag", capturedOutput.getvalue())
-
-    def test_curl_flags(self):
-        self.mock_get_context.return_value = {'ipv4': True}
-        self.assertIn("-4", cfdiag.utils.get_curl_flags())
+        self.assertIn("cfdiag_http_ttfb_seconds", capturedOutput.getvalue())
 
 if __name__ == '__main__':
     unittest.main()

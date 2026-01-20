@@ -21,12 +21,14 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 *   **Direct Origin Test:** (Using `--origin <IP>`) Bypasses Cloudflare to connect directly to your server. Definitively proves if the issue is a firewall blocking Cloudflare IPs.
 *   **Report Comparison:** Diff two reports (`--diff old.txt new.txt`) to spot exactly what changed (Latency, Routes, IPs).
 *   **MTU/Fragmentation Check:** Tests packet sizes to detect Path MTU Discovery blackholes.
+*   **SSL Key Logging:** Decrypt traffic in Wireshark by dumping session keys (`--keylog keys.log`).
 
 ### Utilities
 *   **High-Speed Batch Mode:** Scan hundreds of domains in seconds using multi-threading (`--threads 50`).
 *   **Proxy Support:** Run diagnostics from behind a corporate proxy (`--proxy http://...`).
 *   **IP Version Forcing:** Force IPv4 (`--ipv4`) or IPv6 (`--ipv6`) to isolate stack issues.
 *   **Metrics Export:** Generates Prometheus-compatible metrics (`metrics.prom`) for monitoring integration.
+*   **Grafana Dashboard:** Generate a JSON dashboard for visualizing metrics (`--grafana`).
 *   **History & Trending:** Automatically compares latency (TTFB) with the previous run to detect performance degradation.
 *   **JSON Output:** Output full results as JSON for automation (`--json`).
 *   **Shell Completion:** Generate auto-completion scripts (`--completion bash`).
@@ -78,6 +80,18 @@ cfdiag example.com --ipv4 --proxy http://10.0.0.1:8080
 Check direct origin connectivity, propagation, and enable metrics:
 ```bash
 cfdiag example.com --origin 192.0.2.123 --expect ns1.digitalocean.com --metrics
+```
+
+### Expert Mode (Wireshark Decryption)
+Dump SSL session keys to file:
+```bash
+cfdiag example.com --keylog ssl-keys.log
+```
+
+### Monitoring Setup
+Generate Grafana Dashboard:
+```bash
+cfdiag --grafana > dashboard.json
 ```
 
 ### Batch Mode (High Performance)

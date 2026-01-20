@@ -348,6 +348,12 @@ def step_http3_udp(domain: str) -> bool:
 def step_ssl(domain: str) -> bool:
     print_subheader("9. SSL/TLS Check")
     context = ssl.create_default_context()
+    
+    from .utils import get_context
+    ctx = get_context()
+    if ctx.get('keylog_file'):
+        context.keylog_filename = ctx.get('keylog_file') # type: ignore
+        
     l = get_logger()
     try:
         with socket.create_connection((domain, 443), timeout=5) as sock:
