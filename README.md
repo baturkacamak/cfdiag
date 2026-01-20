@@ -1,8 +1,8 @@
 # cfdiag
 
-A professional-grade, cross-platform (Linux/macOS) diagnostic CLI tool for Cloudflare Error 522, 525, 502, and general connectivity issues.
+A professional-grade, cross-platform (**Linux, macOS, Windows**) diagnostic CLI tool for Cloudflare Error 522, 525, 502, and general connectivity issues.
 
-It orchestrates native system tools (`dig`, `curl`, `nc`, `traceroute`, `openssl`, `ping`) to perform a deep-dive analysis of the connection path between you, Cloudflare, and the Origin server.
+It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and Python's powerful networking libraries to perform a deep-dive analysis of the connection path between you, Cloudflare, and the Origin server.
 
 ## Features
 
@@ -10,8 +10,8 @@ It orchestrates native system tools (`dig`, `curl`, `nc`, `traceroute`, `openssl
 *   **DNS Analysis:** Verifies resolution and compares local results vs. Google (8.8.8.8) and Cloudflare (1.1.1.1) to detect propagation issues.
 *   **ISP/ASN Detection:** Automatically identifies the hosting provider (e.g., AWS, DigitalOcean) of the resolved IP.
 *   **HTTP Inspection:** Smarter than just `ping`. Detects specific HTTP error codes (522, 525, 502) and analyzes headers.
-*   **SSL/TLS Handshake:** Verifies certificate validity and expiration dates.
-*   **TCP Connectivity:** Checks if port 443 is actually open.
+*   **SSL/TLS Handshake:** Verifies certificate validity and expiration dates using native Python SSL libraries.
+*   **TCP Connectivity:** Checks if port 443 is actually open using native sockets (no `nc` required).
 
 ### Advanced Debugging (The "Pro" Stuff)
 *   **Direct Origin Test:** (Using `--origin <IP>`) Bypasses Cloudflare to connect directly to your server. **Definitively proves** if the issue is a firewall blocking Cloudflare or if the server is down.
@@ -21,30 +21,26 @@ It orchestrates native system tools (`dig`, `curl`, `nc`, `traceroute`, `openssl
 *   **Alternative Port Scan:** If port 443 is blocked, it automatically scans valid Cloudflare alternative ports (2053, 8443, 2083, etc.) to find a workaround.
 
 ### Reporting
-*   **Console Output:** Beautiful, colored, human-readable output.
+*   **Console Output:** Beautiful, colored, human-readable output (ANSI colors supported on Windows 10+).
 *   **File Reports:** Automatically saves a clean, Markdown-formatted report to `reports/domain_timestamp.txt` for easy sharing with support teams.
 
 ## Installation
 
-### Dependencies
-The tool uses standard system utilities. You likely have most of them.
-
-**Debian/Ubuntu:**
-```bash
-sudo apt update
-sudo apt install dnsutils curl netcat traceroute openssl iputils-ping python3
-```
-
-**macOS:**
-```bash
-brew install bind curl netcat traceroute openssl
-```
+### Requirements
+*   **Python 3.6+**
+*   **System Tools:** `curl`, `traceroute` (Linux/Mac) or `tracert` (Windows), `ping`.
+    *   *Note: Windows 10/11 includes `curl` and `tracert` by default.*
 
 ### Setup
 ```bash
 git clone git@github.com:baturkacamak/cfdiag.git
 cd cfdiag
-chmod +x cfdiag
+# Linux/macOS
+chmod +x cfdiag.py
+python3 cfdiag.py example.com
+
+# Windows
+python cfdiag.py example.com
 ```
 
 ## Usage
