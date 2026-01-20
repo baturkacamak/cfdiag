@@ -19,9 +19,11 @@ from .network import (
     step_traceroute, step_cf_trace, step_cf_forced, step_origin,
     step_alt_ports, step_redirects, step_waf_evasion,
     step_speed, step_dns_benchmark, step_doh, step_graph,
-    get_traceroute_hops, ping_host
+    get_traceroute_hops, ping_host, run_mtr
 )
 from .system import step_lint_config, step_audit
+from .server import run_diagnostic_server
+from .log_analysis import analyze_logs
 
 def load_config(profile_name: Optional[str] = None) -> Dict[str, Any]:
     from .utils import CONFIG_FILE_NAME
@@ -61,45 +63,6 @@ def self_update() -> None:
 def generate_grafana() -> None:
     from .dashboard import GRAFANA_JSON
     print(GRAFANA_JSON)
-
-def run_mtr(domain: str) -> None:
-    print(f"Tracing route to {domain}...")
-    hops = get_traceroute_hops(domain)
-    if not hops:
-        print("No hops found or traceroute failed.")
-        return
-        
-    stats = {h: {"sent": 0, "lost": 0, "rtt": []} for h in hops}
-    
-    try:
-        while True:
-            # Clear screen
-            os.system('cls' if os.name == 'nt' else 'clear')
-            print(f"{Colors.BOLD}--- MTR Mode: {domain} (Ctrl+C to quit) ---")
-            print(f"{'HOST':<30} | {'LOSS%':<6} | {'AVG':<6} | {'LAST':<6}")
-            print("-" * 60)
-            
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                futures = {executor.submit(ping_host, h): h for h in hops}
-                for f in concurrent.futures.as_completed(futures):
-                    h = futures[f]
-                    stats[h]["sent"] += 1
-                    rtt = f.result()
-                    if rtt == -1.0:
-                        stats[h]["lost"] += 1
-                    else:
-                        stats[h]["rtt"].append(rtt)
-            
-            for h in hops:
-                s = stats[h]
-                loss = (s["lost"] / s["sent"]) * 100 if s["sent"] > 0 else 0
-                avg = sum(s["rtt"]) / len(s["rtt"]) if s["rtt"] else 0
-                last = s["rtt"][-1] if s["rtt"] else 0
-                print(f"{h:<30} | {loss:>5.1f}% | {avg:>6.1f} | {last:>6.1f}")
-            
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\nMTR stopped.")
 
 def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res, dnssec_status, prop_status, history_diff) -> None:
     l = get_logger()
@@ -281,7 +244,7 @@ _cfdiag()
     COMPREPLY=()
     cur=\"${COMP_WORDS[COMP_CWORD]}\"
     prev=\"${COMP_WORDS[COMP_CWORD-1]}\"
-    opts=\"--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion --grafana --keylog --watch --notify --speed --benchmark-dns --doh --audit --lint-config --graph --mtr\"
+    opts=\"--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion --grafana --keylog --watch --notify --speed --benchmark-dns --doh --audit --lint-config --graph --mtr --serve --analyze-logs\"
 
     if [[ ${cur} == -* ]] ; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -324,6 +287,8 @@ _cfdiag() {
         '--lint-config[Lint web server config file]:filename:_files'
         '--graph[Generate Graphviz DOT output]'
         '--mtr[Run interactive MTR trace]'
+        '--serve[Start diagnostic HTTP server on port]:port'
+        '--analyze-logs[Analyze web server access logs]:filename:_files'
     )
     _arguments "${args[@]}"
 }
@@ -369,6 +334,8 @@ def main() -> None:
     parser.add_argument("--lint-config", help="Lint web server configuration file")
     parser.add_argument("--graph", action="store_true", help="Output Graphviz DOT topology")
     parser.add_argument("--mtr", action="store_true", help="Run interactive MTR")
+    parser.add_argument("--serve", type=int, nargs='?', const=8080, help="Start diagnostic server (default port 8080)")
+    parser.add_argument("--analyze-logs", help="Analyze access log file")
     
     args = parser.parse_args()
     
@@ -378,6 +345,8 @@ def main() -> None:
     if args.completion: generate_completion(args.completion); return
     if args.grafana: generate_grafana(); return
     if args.lint_config: step_lint_config(args.lint_config); return
+    if args.analyze_logs: analyze_logs(args.analyze_logs); return
+    if args.serve: run_diagnostic_server(args.serve); return
 
     config = load_config(args.profile)
     domain = args.domain or config.get("domain")
@@ -442,7 +411,7 @@ def main() -> None:
             try:
                 while True:
                     os.system('cls' if os.name == 'nt' else 'clear')
-                    print(f"{Colors.BOLD}--- Watch Mode (Ctrl+C to stop) ---")
+                    print(f"{Colors.BOLD}--- Watch Mode (Ctrl+C to stop) ---{Colors.ENDC}")
                     l = FileLogger(verbose=args.verbose, silent=silent)
                     set_logger(l)
                     

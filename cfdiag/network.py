@@ -8,6 +8,7 @@ import re
 import json
 import os
 import time
+import concurrent.futures
 from typing import Tuple, List, Dict, Optional
 from .utils import get_curl_flags, PUBLIC_RESOLVERS, DNSBL_LIST, USER_AGENTS, console_lock, Colors
 from .reporting import (
@@ -620,3 +621,41 @@ def ping_host(host: str) -> float:
         m = re.search(r'time[=<]([\d\.]+)', out)
         if m: return float(m.group(1))
     return -1.0
+
+def run_mtr(domain: str) -> None:
+    print(f"Tracing route to {domain}...")
+    hops = get_traceroute_hops(domain)
+    if not hops:
+        print("No hops found or traceroute failed.")
+        return
+        
+    stats = {h: {"sent": 0, "lost": 0, "rtt": []} for h in hops}
+    
+    try:
+        while True:
+            os.system('cls' if os.name == 'nt' else 'clear')
+            print(f"{Colors.BOLD}--- MTR Mode: {domain} (Ctrl+C to quit) ---{Colors.ENDC}")
+            print(f"{'HOST':<30} | {'LOSS%':<6} | {'AVG':<6} | {'LAST':<6}")
+            print("-" * 60)
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                futures = {executor.submit(ping_host, h): h for h in hops}
+                for f in concurrent.futures.as_completed(futures):
+                    h = futures[f]
+                    stats[h]["sent"] += 1
+                    rtt = f.result()
+                    if rtt == -1.0:
+                        stats[h]["lost"] += 1
+                    else:
+                        stats[h]["rtt"].append(rtt)
+            
+            for h in hops:
+                s = stats[h]
+                loss = (s["lost"] / s["sent"]) * 100 if s["sent"] > 0 else 0
+                avg = sum(s["rtt"]) / len(s["rtt"]) if s["rtt"] else 0
+                last = s["rtt"][-1] if s["rtt"] else 0
+                print(f"{h:<30} | {loss:>5.1f}% | {avg:>6.1f} | {last:>6.1f}")
+            
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nMTR stopped.")
