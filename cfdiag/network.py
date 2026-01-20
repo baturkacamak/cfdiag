@@ -7,10 +7,11 @@ import textwrap
 import re
 import json
 import os
+import time
 from typing import Tuple, List, Dict, Optional
 from .utils import get_curl_flags, PUBLIC_RESOLVERS, DNSBL_LIST, USER_AGENTS, console_lock, Colors
 from .reporting import (
-    get_logger, print_header, print_subheader, print_success, 
+    get_logger, print_header, print_subheader, print_success,
     print_fail, print_info, print_warning, print_cmd
 )
 
@@ -29,12 +30,6 @@ def run_command(command: str, timeout: int = 30, show_output: bool = True, log_o
     from .utils import get_context
     ctx = get_context()
     if ctx.get('timeout'):
-        # Allow override but generally respect context
-        # If the caller passed a specific timeout (like 60 for trace), maybe keep it?
-        # But if user says --timeout 5, they want 5.
-        # Let's say explicit > context? No, Context > Default.
-        # But run_command default is 30.
-        # If timeout is 30 (default), use context.
         if timeout == 30:
             timeout = int(ctx.get('timeout'))
 
@@ -80,7 +75,6 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
     ipv4: List[str] = []
     ipv6: List[str] = []
     
-    # We need get_context. It is in utils.
     from .utils import get_context
     ctx = get_context()
     family = socket.AF_UNSPEC
@@ -150,7 +144,7 @@ def step_blacklist(domain: str, ip: str) -> None:
                 print_fail(f"Listed on {name}!")
                 details += f"Listed on {name}\n"
                 listed = True
-            except:
+            except: 
                 details += f"Clean on {name}\n"
         if l: l.add_html_step("Blacklist Check", "FAIL" if listed else "PASS", details)
     except Exception as e:
@@ -496,3 +490,57 @@ def step_waf_evasion(domain: str) -> None:
     if blocked:
         l.log(f"{Colors.WARNING}WAF Detected: Blocks {', '.join(blocked)}{Colors.ENDC}", force=True)
     if l: l.add_html_step("WAF Evasion", "INFO", f"Blocked: {blocked}\nAllowed: {allowed}")
+
+def step_speed(domain: str) -> None:
+    # Feature: Throughput Test
+    print_subheader("19. Throughput Speed Test")
+    flags = get_curl_flags()
+    # Download header + body, discard output, measure speed
+    # curl -w "%{{speed_download}}" ...
+    cmd = f'curl{flags} -s -w "%{{speed_download}}" -o /dev/null https://{domain}/'
+    
+    speeds = []
+    for _ in range(3):
+        c, out = run_command(cmd, show_output=False, log_output_to_file=True)
+        if c == 0:
+            try:
+                # speed_download is bytes/sec
+                s = float(out.strip())
+                speeds.append(s)
+            except: pass
+    
+    l = get_logger()
+    if speeds:
+        avg_speed = sum(speeds) / len(speeds)
+        # Convert to Mbps
+        mbps = (avg_speed * 8) / 1_000_000
+        print_success(f"Average Download Speed: {mbps:.2f} Mbps")
+        if l: l.add_html_step("Speed Test", "PASS", f"Avg: {mbps:.2f} Mbps")
+    else:
+        print_warning("Speed test failed to collect data.")
+
+def step_dns_benchmark(domain: str) -> None:
+    # Feature: DNS Benchmark
+    print_subheader("20. DNS Resolver Benchmark")
+    results = []
+    if not shutil.which("dig"): return
+    
+    for name, ip in PUBLIC_RESOLVERS:
+        start = time.time()
+        cmd = f"dig @{ip} +short {domain}"
+        c, out = run_command(cmd, show_output=False)
+        end = time.time()
+        
+        if c == 0 and out.strip():
+            ms = (end - start) * 1000
+            results.append((name, ms))
+    
+    results.sort(key=lambda x: x[1])
+    
+    l = get_logger()
+    details = ""
+    for name, ms in results:
+        print_info(f"{name:<15}: {ms:.2f} ms")
+        details += f"{name}: {ms:.2f} ms\n"
+        
+    if l: l.add_html_step("DNS Benchmark", "INFO", details)

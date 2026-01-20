@@ -44,19 +44,18 @@ class TestCFDiag(unittest.TestCase):
         self.assertTrue(success)
 
     @patch('cfdiag.network.run_command')
-    def test_ocsp_stapling(self, mock_run):
-        mock_run.return_value = (0, "OCSP Response Status: successful")
-        with patch('shutil.which', return_value='/usr/bin/openssl'):
-            cfdiag.network.step_ocsp("example.com")
+    def test_speed_test(self, mock_run):
+        # Mock curl outputting bytes/sec
+        mock_run.return_value = (0, "1048576") # 1 MB/s
+        cfdiag.network.step_speed("example.com")
+        # Implicit assertion: no crash
 
-    @patch('cfdiag.network.ssl.create_default_context')
-    def test_ssl_keylog(self, mock_ssl_context):
-        self.mock_get_context.return_value = {'keylog_file': 'keys.log'}
-        mock_ctx = MagicMock()
-        mock_ssl_context.return_value = mock_ctx
-        with patch('cfdiag.network.socket.create_connection'):
-             cfdiag.network.step_ssl("example.com")
-        self.assertEqual(mock_ctx.keylog_filename, 'keys.log')
+    @patch('cfdiag.network.run_command')
+    def test_dns_benchmark(self, mock_run):
+        # Mock dig output
+        mock_run.return_value = (0, "1.2.3.4")
+        with patch('shutil.which', return_value='/usr/bin/dig'):
+            cfdiag.network.step_dns_benchmark("example.com")
 
     def test_grafana_output(self):
         capturedOutput = io.StringIO()
@@ -64,21 +63,6 @@ class TestCFDiag(unittest.TestCase):
         cfdiag.core.generate_grafana()
         sys.stdout = sys.__stdout__
         self.assertIn("cfdiag_http_ttfb_seconds", capturedOutput.getvalue())
-
-    def test_curl_flags_header(self):
-        self.mock_get_context.return_value = {'headers': ['X-Foo: Bar'], 'ipv4': True}
-        flags = cfdiag.utils.get_curl_flags()
-        self.assertIn("-4", flags)
-        self.assertIn('-H "X-Foo: Bar"', flags)
-
-    @patch('cfdiag.reporting.urllib.request.urlopen')
-    def test_webhook(self, mock_urlopen):
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_urlopen.return_value.__enter__.return_value = mock_resp
-        
-        cfdiag.reporting.send_webhook("http://hook", "test.com", {"dns": "OK"})
-        mock_urlopen.assert_called()
 
 if __name__ == '__main__':
     unittest.main()

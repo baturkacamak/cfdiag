@@ -17,7 +17,8 @@ from .network import (
     step_dnssec, step_domain_status, step_http, step_security_headers,
     step_http3_udp, step_ssl, step_ocsp, step_tcp, step_mtu,
     step_traceroute, step_cf_trace, step_cf_forced, step_origin,
-    step_alt_ports, step_redirects, step_waf_evasion
+    step_alt_ports, step_redirects, step_waf_evasion,
+    step_speed, step_dns_benchmark
 )
 
 def load_config(profile_name: Optional[str] = None) -> Dict[str, Any]:
@@ -145,7 +146,7 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
     l.log_console(f"\n{Colors.GREY}{SEPARATOR}{Colors.ENDC}", force=True)
     l.log_file(f"\n{SEPARATOR}")
 
-def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False) -> Dict[str, Any]:
+def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False, speed_test: bool=False, dns_benchmark: bool=False) -> Dict[str, Any]:
     reports_dir = "reports"
     domain_dir = os.path.join(reports_dir, domain)
     if not os.path.exists(domain_dir): os.makedirs(domain_dir)
@@ -156,8 +157,6 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     if l:
         l.html_data['domain'] = domain
         l.html_data['timestamp'] = timestamp
-        # In Watch Mode, we might want to suppress the "DIAGNOSING" header every 5s if we want a cleaner dashboard
-        # But we clear the screen anyway.
         l.log_console(f"\n{Colors.BOLD}{Colors.HEADER}DIAGNOSING: {domain}{Colors.ENDC}", force=True)
         l.log_file(f"# DIAGNOSIS: {domain}\nDate: {timestamp}", force=True)
 
@@ -183,6 +182,9 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     
     step_redirects(domain)
     step_waf_evasion(domain)
+    
+    if speed_test: step_speed(domain)
+    if dns_benchmark: step_dns_benchmark(domain)
 
     current_metrics = {
         "timestamp": time.time(),
@@ -233,7 +235,7 @@ _cfdiag()
     COMPREPLY=()
     cur=\"${COMP_WORDS[COMP_CWORD]}\" 
     prev=\"${COMP_WORDS[COMP_CWORD-1]}\" 
-    opts=\"--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion --grafana --keylog --watch --notify\"
+    opts=\"--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion --grafana --keylog --watch --notify --speed --benchmark-dns\"
 
     if [[ ${cur} == -* ]] ; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -269,6 +271,8 @@ _cfdiag() {
         '--keylog[SSL Keylog file]:filename:_files'
         '--watch[Run continuously every 5 seconds]'
         '--notify[Webhook URL for notifications]:url'
+        '--speed[Run throughput/speed test]'
+        '--benchmark-dns[Benchmark public resolvers against the domain]'
     )
     _arguments "${args[@]}"
 }
@@ -307,6 +311,8 @@ def main() -> None:
     parser.add_argument("--junit", action="store_true", help="Generate JUnit XML Report")
     parser.add_argument("--watch", action="store_true", help="Run continuously (every 5s)")
     parser.add_argument("--notify", help="Webhook URL for notification on completion")
+    parser.add_argument("--speed", action="store_true", help="Run Throughput/Speed test")
+    parser.add_argument("--benchmark-dns", action="store_true", help="Benchmark DNS Resolvers")
     
     args = parser.parse_args()
     
@@ -362,7 +368,6 @@ def main() -> None:
         print(f"\n{Colors.OKGREEN}Batch Complete. Detailed reports in reports/{Colors.ENDC}")
         
         if args.notify:
-            # Aggregate stats for notification
             send_webhook(args.notify, f"Batch ({len(domains)} domains)", {"dns": "DONE", "http": "DONE"})
 
     else:
@@ -376,22 +381,16 @@ def main() -> None:
                 while True:
                     os.system('cls' if os.name == 'nt' else 'clear')
                     print(f"{Colors.BOLD}--- Watch Mode (Ctrl+C to stop) ---{Colors.ENDC}")
-                    # Re-init logger logic if needed, but instance persists.
-                    # Actually, we might want new html_data every time?
-                    # Or just run it.
-                    # run_diagnostics re-initializes html_data if we set l again?
-                    # No, l.html_data is in __init__.
-                    # We should reset l for every run to clear previous steps.
                     l = FileLogger(verbose=args.verbose, silent=silent)
                     set_logger(l)
                     
-                    result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics)
+                    result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics, args.speed, args.benchmark_dns)
                     time.sleep(5)
             except KeyboardInterrupt:
                 print("\nStopped.")
                 sys.exit(0)
         else:
-            result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics)
+            result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics, args.speed, args.benchmark_dns)
             
             if args.markdown:
                 l.save_markdown(os.path.join("reports", domain, f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.md"))
