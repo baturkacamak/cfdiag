@@ -367,18 +367,37 @@ def step_http(domain):
     if code == 0:
         # Parse status code
         status_line = next((line for line in output.splitlines() if line.startswith("HTTP/")), None)
+        status_code = 0
+        
         if status_line:
-            print_success(f"Response received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
-            return "SUCCESS", status_line
+            parts = status_line.split()
+            if len(parts) >= 2:
+                try:
+                    status_code = int(parts[1])
+                except ValueError:
+                    pass
+            
+            if 200 <= status_code < 400:
+                print_success(f"Response received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
+                return "SUCCESS", status_code
+            elif 400 <= status_code < 500:
+                print_warning(f"Client Error received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
+                return "CLIENT_ERROR", status_code
+            elif status_code >= 500:
+                print_fail(f"Server Error received: {Colors.WHITE}{Colors.BOLD}{status_line.strip()}{Colors.ENDC}")
+                return "SERVER_ERROR", status_code
+            else:
+                 print_warning(f"Unexpected status: {status_line.strip()}")
+                 return "WEIRD", status_code
         else:
             print_warning("Connection successful, but no HTTP status header found.")
-            return "WEIRD", output
+            return "WEIRD", 0
     elif code == 28: # curl timeout code
         print_fail("Connection timed out (Likely 522 cause).")
-        return "TIMEOUT", output
+        return "TIMEOUT", 0
     else:
         print_fail(f"curl failed with exit code {code}.")
-        return "ERROR", output
+        return "ERROR", 0
 
 def step_ssl(domain):
     print_subheader("4. SSL/TLS Certificate Check")
@@ -551,17 +570,32 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
                              "[WARN] MTU/Fragmentation issues detected. Check your network configuration."))
 
     # HTTP Analysis (The core of 522)
-    http_status, http_details = http_res
+    http_status, http_code = http_res
     
     if http_status == "SUCCESS":
-        conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} HTTP requests are working.",
-                            "[PASS] HTTP requests are working."))
-        if "522" in str(http_details):
-             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Server returned Error 522 directly.",
-                                 "[ALERT] Server returned Error 522 directly."))
+        conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} HTTP requests are working (Code {http_code}).",
+                            f"[PASS] HTTP requests are working (Code {http_code})."))
+    elif http_status == "CLIENT_ERROR":
+         conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} Server returned Client Error (Code {http_code}).",
+                             f"[WARN] Server returned Client Error (Code {http_code})."))
+    elif http_status == "SERVER_ERROR":
+         conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} Server returned Error (Code {http_code}).",
+                             f"[CRITICAL] Server returned Error (Code {http_code})."))
+         if http_code == 522:
+             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 522: Connection Timed Out to Origin.",
+                                 "[ALERT] Cloudflare 522: Connection Timed Out to Origin."))
+         elif http_code == 525:
+             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 525: SSL Handshake Failed with Origin.",
+                                 "[ALERT] Cloudflare 525: SSL Handshake Failed with Origin."))
+         elif http_code == 502:
+             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 502: Bad Gateway (Origin invalid response/down).",
+                                 "[ALERT] Cloudflare 502: Bad Gateway (Origin invalid response/down)."))
     elif http_status == "TIMEOUT":
         conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} HTTP Request Timed Out (Potential 522).",
                             "[CRITICAL] HTTP Request Timed Out (Potential 522)."))
+    else:
+        conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} HTTP check failed/weird status.",
+                            "[WARN] HTTP check failed/weird status."))
 
     # Cloudflare Edge Analysis
     if cf_res or cf_trace_res[0]:
