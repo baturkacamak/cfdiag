@@ -57,19 +57,23 @@ strict-transport-security: max-age=31536000
     @patch('cfdiag.step_tcp')
     @patch('cfdiag.run_command')
     @patch('cfdiag.step_security_headers') 
-    def test_html_report_generation(self, mock_sec, mock_run, mock_tcp, mock_http, mock_dns, mock_net):
+    @patch('cfdiag.save_history')
+    @patch('cfdiag.save_metrics')
+    def test_run_diagnostics_integration(self, mock_metrics, mock_hist, mock_sec, mock_run, mock_tcp, mock_http, mock_dns, mock_net):
         mock_net.return_value = True
         mock_dns.return_value = (True, ["1.1.1.1"], [])
         mock_http.return_value = ("SUCCESS", 200, False, {})
         mock_tcp.return_value = True
         mock_run.return_value = (0, "Mock Output")
+        mock_hist.return_value = {"ttfb": 0.1} # Previous history
         
         self.mock_logger.save_html.return_value = True
         
         with patch('os.makedirs'), patch('cfdiag.logger.save_to_file'):
-             cfdiag.run_diagnostics("example.com")
+             cfdiag.run_diagnostics("example.com", export_metrics=True)
              
-        self.mock_logger.save_html.assert_called()
+        mock_metrics.assert_called()
+        mock_hist.assert_called()
 
 if __name__ == '__main__':
     unittest.main()
