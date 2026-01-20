@@ -9,7 +9,7 @@ It orchestrates native system tools (dig, curl, nc, traceroute, openssl, ping)
 to gather diagnostics and presents a structured, actionable summary.
 
 Usage:
-    python3 cfdiag.py <domain>
+    python3 cfdiag.py <domain> [--origin <ip>]
 
 Author: Gemini Agent
 """
@@ -54,7 +54,7 @@ class FileLogger:
     """Handles printing to stdout and buffering for clean file output."""
     def __init__(self):
         self.file_buffer = []
-        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\-_]|[\[0-?]*[ -/]*[@-~])')
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\-_]|[0-?]*[ -/]*[@-~])')
 
     def log_console(self, msg="", end="\n", flush=False):
         """Prints directly to console only."""
@@ -522,9 +522,48 @@ def step_cf_forced(domain):
         print_fail("Failed to connect to Cloudflare Edge IP (1.1.1.1).")
         return False
 
+def step_origin_connect(domain, origin_ip):
+    print_subheader("10. Direct Origin Connectivity Test")
+    print_info(f"Attempting to bypass Cloudflare and connect directly to {origin_ip}...")
+    
+    # --resolve domain:443:origin_ip forces curl to send the request to origin_ip 
+    # but keep the Host header as 'domain'
+    cmd = f"curl -I --connect-timeout 10 -k --resolve {domain}:443:{origin_ip} https://{domain}"
+    print_cmd(cmd)
+    
+    code, output = run_command(cmd, log_output_to_file=True)
+    
+    if code == 0:
+        # Parse status code
+        status_line = next((line for line in output.splitlines() if line.startswith("HTTP/")), None)
+        status_code = 0
+        if status_line:
+            parts = status_line.split()
+            if len(parts) >= 2:
+                try:
+                    status_code = int(parts[1])
+                except ValueError:
+                    pass
+            
+            if 200 <= status_code < 500:
+                print_success(f"Direct connection to Origin succeeded! (Status: {status_code})")
+                return True, "SUCCESS"
+            else:
+                 print_fail(f"Origin returned an error: {status_line.strip()}")
+                 return True, "ERROR" # Connected but error
+        else:
+             print_warning("Connected to origin, but no status header.")
+             return True, "WEIRD"
+    elif code == 28:
+        print_fail("Direct connection to Origin TIMED OUT.")
+        return False, "TIMEOUT"
+    else:
+        print_fail(f"Direct connection failed (Exit Code {code}).")
+        return False, "FAILED"
+
 # --- Summary & Analysis ---
 
-def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res):
+def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res):
     print_header("DIAGNOSTIC SUMMARY")
     
     logger.log_console(f"Target: {Colors.BOLD}{domain}{Colors.ENDC}")
@@ -597,6 +636,31 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
         conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} HTTP check failed/weird status.",
                             "[WARN] HTTP check failed/weird status."))
 
+    # Direct Origin Analysis (ROOT CAUSE)
+    if origin_res:
+        connected, reason = origin_res
+        if connected and reason == "SUCCESS":
+             conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Direct Origin Connection SUCCEEDED.",
+                                 "[PASS] Direct Origin Connection SUCCEEDED."))
+             if http_code in [522, 524, 502, 504]:
+                  conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[DIAGNOSIS]{Colors.ENDC} Origin is UP but Cloudflare is failing.",
+                                      "[DIAGNOSIS] Origin is UP but Cloudflare is failing."))
+                  conclusions.append(("  -> CAUSE: Firewall is likely blocking Cloudflare IPs, or Rate Limiting is active.",
+                                      "  -> CAUSE: Firewall is likely blocking Cloudflare IPs, or Rate Limiting is active."))
+                  conclusions.append(("  -> FIX: Whitelist Cloudflare IPs (https://www.cloudflare.com/ips/).",
+                                      "  -> FIX: Whitelist Cloudflare IPs (https://www.cloudflare.com/ips/)."))
+        elif not connected and reason == "TIMEOUT":
+             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} Direct Origin Connection TIMED OUT.",
+                                 "[CRITICAL] Direct Origin Connection TIMED OUT."))
+             conclusions.append((f"{Colors.FAIL}{Colors.BOLD}[DIAGNOSIS]{Colors.ENDC} Origin Server is DOWN or Unreachable.",
+                                 "[DIAGNOSIS] Origin Server is DOWN or Unreachable."))
+             conclusions.append(("  -> CAUSE: Server crashed, networking is broken, or wrong IP provided.",
+                                 "  -> CAUSE: Server crashed, networking is broken, or wrong IP provided."))
+        else:
+             conclusions.append((f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} Direct Origin returned: {reason}",
+                                 f"[WARN] Direct Origin returned: {reason}"))
+
+
     # Cloudflare Edge Analysis
     if cf_res or cf_trace_res[0]:
         conclusions.append((f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Cloudflare Edge Network is reachable.",
@@ -626,6 +690,7 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
 def main():
     parser = argparse.ArgumentParser(description="Cloudflare & Connectivity Diagnostic Tool")
     parser.add_argument("domain", help="The target domain to diagnose (e.g., example.com)")
+    parser.add_argument("--origin", help="Optional: Origin Server IP to test direct connectivity (Bypass Cloudflare)", default=None)
     parser.add_argument("--no-color", action="store_true", help="Disable colored output")
     
     args = parser.parse_args()
@@ -653,10 +718,14 @@ def main():
     # 1. Header
     print_header("CFDIAG - Connectivity Diagnostics")
     logger.log_console(f"Target Domain: {Colors.BOLD}{Colors.WHITE}{target_domain}{Colors.ENDC}")
+    if args.origin:
+        logger.log_console(f"Origin IP:     {Colors.BOLD}{Colors.OKCYAN}{args.origin}{Colors.ENDC}")
     logger.log_console(f"OS:            {platform.system()} {platform.release()}")
     logger.log_console(f"Date:          {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     logger.log_file(f"Target Domain: {target_domain}")
+    if args.origin:
+        logger.log_file(f"Origin IP:     {args.origin}")
     logger.log_file(f"OS:            {platform.system()} {platform.release()}")
     logger.log_file(f"Date:          {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
@@ -686,11 +755,16 @@ def main():
     
     # 7. CF Force Resolve
     cf_ok = step_cf_forced(target_domain)
+
+    # 8. Origin Test (Optional)
+    origin_res = None
+    if args.origin:
+        origin_res = step_origin_connect(target_domain, args.origin)
     
-    # 8. Summary
-    generate_summary(target_domain, (dns_ok, dns_ips), http_result, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok)
+    # 9. Summary
+    generate_summary(target_domain, (dns_ok, dns_ips), http_result, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res)
     
-    # 9. Save Log
+    # 10. Save Log
     if logger.save_to_file(log_filename):
         print(f"\n{Colors.OKBLUE}📄 Report saved to: {Colors.BOLD}{log_filename}{Colors.ENDC}")
 
