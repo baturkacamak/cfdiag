@@ -36,7 +36,7 @@ from typing import List, Tuple, Dict, Optional, Any, Union
 
 # --- Configuration & Constants ---
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"
@@ -59,6 +59,13 @@ DNSBL_LIST: List[Tuple[str, str]] = [
     ("Spamhaus ZEN", "zen.spamhaus.org"),
     ("Barracuda", "b.barracudacentral.org")
 ]
+
+# User Agents for Fuzzing
+USER_AGENTS = {
+    "Browser (Chrome)": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Bot (Googlebot)": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "Empty UA": ""
+}
 
 # Thread Lock for Console Output
 console_lock = threading.Lock()
@@ -101,7 +108,7 @@ class FileLogger:
             "steps": [],
             "summary": []
         }
-        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\-_]|[[0-?]*[ -/]*[@-~])')
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|[[0-?]*[ -/]*[@-~])')
         self.verbose = verbose 
         self.silent = silent   
 
@@ -185,10 +192,7 @@ class FileLogger:
             return True
         except: return False
 
-# Thread-Local Logger (Instead of global)
-# We use a thread-local storage or pass logger around.
-# Passing logger is cleaner, but to avoid massive refactor of all steps,
-# we will use a thread-local variable for 'logger'.
+# Thread-Local Logger
 thread_local = threading.local()
 
 def get_logger() -> Optional[FileLogger]:
@@ -197,7 +201,7 @@ def get_logger() -> Optional[FileLogger]:
 def set_logger(log_obj: FileLogger) -> None:
     thread_local.logger = log_obj
 
-# --- Helper Functions (Updated to use get_logger) ---
+# --- Helper Functions ---
 
 def print_header(title: str) -> None:
     l = get_logger()
@@ -259,9 +263,7 @@ def run_command(command: str, timeout: int = 30, show_output: bool = True, log_o
             if not line and process.poll() is not None: break
             if line:
                 if show_output and l and l.verbose and not l.silent: 
-                    # Use lock for stdout to prevent scrambling
-                    with console_lock:
-                        sys.stdout.write(line) 
+                    with console_lock: sys.stdout.write(line) 
                 output_lines.append(line)
         
         full_output = "".join(output_lines)
@@ -316,7 +318,7 @@ def self_update() -> None:
     except Exception as e:
         print(f"Update failed: {e}")
 
-# --- Features: History & Metrics ---
+# --- Features ---
 
 def save_history(domain: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
     history_file = os.path.join("reports", domain, ".history.json")
@@ -325,11 +327,9 @@ def save_history(domain: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
         try:
             with open(history_file, 'r') as f: prev_data = json.load(f)
         except: pass
-    
     try:
         with open(history_file, 'w') as f: json.dump(metrics, f)
     except: pass
-    
     return prev_data
 
 def save_metrics(domain: str, metrics: Dict[str, Any]):
@@ -347,8 +347,7 @@ def save_metrics(domain: str, metrics: Dict[str, Any]):
         with open(prom_file, 'w') as f: f.write("\n".join(lines))
     except: pass
 
-# --- Diagnostic Steps (Unchanged, they use helper functions which use get_logger) ---
-# I will re-write them to ensure they use the global helper functions which I updated.
+# --- Diagnostic Steps ---
 
 def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
     print_subheader("1. DNS Resolution & ASN/ISP Check")
@@ -535,14 +534,12 @@ def step_cache_headers(http_output: str) -> None:
     
     cache_status = headers.get('cf-cache-status', 'MISSING')
     server = headers.get('server', '').lower()
-    
     l = get_logger()
     if 'cloudflare' in server:
         if cache_status in ['HIT', 'DYNAMIC', 'BYPASS', 'EXPIRED', 'MISS']:
             print_info(f"Cache Status: {Colors.WHITE}{cache_status}{Colors.ENDC}")
         elif cache_status == 'MISSING':
             print_warning("Cloudflare active but 'cf-cache-status' header missing.")
-        
         if l: l.add_html_step("Cache Analysis", "INFO", f"Status: {cache_status}")
 
 def step_security_headers(domain: str) -> None:
@@ -575,7 +572,6 @@ def step_security_headers(domain: str) -> None:
         else:
             print_warning(f"{name}: Missing")
             details += f"{name}: MISSING\n"
-    
     l = get_logger()
     if l: l.add_html_step("Security Headers", f"{passed}/{len(checks)}", details)
 
@@ -652,6 +648,59 @@ def step_origin(domain: str, ip: str) -> Tuple[bool, str]:
 def step_alt_ports(domain: str) -> Tuple[bool, List[int]]:
     print_subheader("16. Alt Ports")
     return False, []
+
+def step_redirects(domain: str) -> None:
+    # Feature 1: Redirect Chain
+    print_subheader("17. Redirect Chain Analysis")
+    # Using curl to follow redirects and print url_effective
+    # curl -L -w "%{{url_effective}}\n" -I -o /dev/null
+    # But we want to see the hops.
+    # Python urllib is easier for this logic?
+    # No, curl -v or just iterative requests.
+    # Let's use iterative curl -I requests.
+    
+    current_url = f"http://{domain}" # Start with http to see if it redirects to https
+    hops = []
+    
+    for i in range(5): # Max 5 hops
+        hops.append(current_url)
+        cmd = f'curl -I -s -w "%{{redirect_url}}" -o /dev/null {current_url}'
+        c, next_url = run_command(cmd, show_output=False, log_output_to_file=True)
+        if c == 0 and next_url.strip():
+            print_info(f"Hop {i+1}: {current_url} -> {next_url}")
+            current_url = next_url
+        else:
+            print_success(f"Final Destination: {current_url}")
+            break
+            
+    l = get_logger()
+    if l: l.add_html_step("Redirects", "INFO", "\n".join(hops))
+
+def step_waf_evasion(domain: str) -> None:
+    # Feature 2: User-Agent Fuzzing
+    print_subheader("18. WAF / User-Agent Test")
+    
+    blocked = []
+    allowed = []
+    
+    for name, ua in USER_AGENTS.items():
+        cmd = f'curl -I -s -o /dev/null -w "%{{http_code}}" -H "User-Agent: {ua}" https://{domain}'
+        c, code_str = run_command(cmd, show_output=False, log_output_to_file=True)
+        
+        try:
+            code = int(code_str)
+            if code == 403 or code == 406:
+                print_warning(f"{name}: BLOCKED (HTTP {code})")
+                blocked.append(name)
+            else:
+                print_success(f"{name}: OK (HTTP {code})")
+                allowed.append(name)
+        except: pass
+    
+    l = get_logger()
+    if blocked:
+        l.log(f"{Colors.WARNING}WAF Detected: Blocks {', '.join(blocked)}{Colors.ENDC}", force=True)
+    if l: l.add_html_step("WAF Evasion", "INFO", f"Blocked: {blocked}\nAllowed: {allowed}")
 
 def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res, dnssec_status, prop_status, history_diff) -> None:
     l = get_logger()
@@ -739,38 +788,12 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
     l.log_console(f"\n{Colors.GREY}{SEPARATOR}{Colors.ENDC}", force=True)
     l.log_file(f"\n{SEPARATOR}")
 
-# --- Orchestrator ---
-
-def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False) -> Dict[str, Any]:
-    reports_dir = "reports"
-    domain_dir = os.path.join(reports_dir, domain)
-    if not os.path.exists(domain_dir): os.makedirs(domain_dir)
-    
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    log_file = os.path.join(domain_dir, f"{timestamp}.txt")
-    
-    # Initialize Thread Local Logger
-    local_logger = FileLogger(verbose=False, silent=False) # Configured via caller usually
-    set_logger(local_logger)
-    
-    # Check if this thread needs verbose/silent based on global args or batch context
-    # Refactor: run_diagnostics should take logger options?
-    # We will assume caller sets logger options if needed, but here we just created a default one
-    # Wait, the caller logic in 'main' was `logger = FileLogger(...)`.
-    # And `run_diagnostics` uses `logger` global.
-    # But with Threading, we need local logger.
-    # We should NOT create `local_logger` here if we want to respect caller's config.
-    # Instead, we should pass the logger configuration into `run_diagnostics`.
-    pass 
-
 def run_diagnostics_wrapper(domain: str, origin: Optional[str], expect: Optional[str], metrics: bool, verbose: bool, silent: bool) -> Dict[str, Any]:
-    # Thread-safe wrapper that sets up logger
     l = FileLogger(verbose=verbose, silent=silent)
     set_logger(l)
     return run_diagnostics_impl(domain, origin, expect, metrics)
 
 def run_diagnostics_impl(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False) -> Dict[str, Any]:
-    # Actual implementation
     reports_dir = "reports"
     domain_dir = os.path.join(reports_dir, domain)
     if not os.path.exists(domain_dir): os.makedirs(domain_dir)
@@ -800,8 +823,14 @@ def run_diagnostics_impl(domain: str, origin_ip: Optional[str]=None, expected_ns
     if not tcp_ok: alt_ports_res = step_alt_ports(domain)
     step_traceroute(domain)
     cf_trace_ok = step_cf_trace(domain)
-    step_cf_forced(domain)
+    cf_ok = step_cf_forced(domain)
     origin_res = step_origin(domain, origin_ip) if origin_ip else None
+    
+    # Feature 1: Redirects
+    step_redirects(domain)
+    
+    # Feature 2: WAF Evasion
+    step_waf_evasion(domain)
 
     # History
     current_metrics = {
@@ -816,7 +845,7 @@ def run_diagnostics_impl(domain: str, origin_ip: Optional[str]=None, expected_ns
 
     if export_metrics: save_metrics(domain, current_metrics)
 
-    generate_summary(domain, (dns_ok, ipv4, ipv6), http_res, tcp_ok, step_cf_forced(domain), mtu_ok, ssl_ok, cf_trace_ok, origin_res, alt_ports_res, dnssec_status, prop_status, history_diff)
+    generate_summary(domain, (dns_ok, ipv4, ipv6), http_res, tcp_ok, cf_ok, mtu_ok, ssl_ok, cf_trace_ok, origin_res, alt_ports_res, dnssec_status, prop_status, history_diff)
 
     if l:
         l.save_to_file(log_file)
@@ -843,7 +872,7 @@ def main() -> None:
     parser.add_argument("--version", action="version", version=f"cfdiag {VERSION}")
     parser.add_argument("--update", action="store_true")
     parser.add_argument("--metrics", action="store_true")
-    parser.add_argument("--threads", type=int, default=5, help="Number of threads for batch mode")
+    parser.add_argument("--threads", type=int, default=5)
     args = parser.parse_args()
     
     if args.update: self_update(); return
@@ -869,18 +898,14 @@ def main() -> None:
             
         print(f"\n{Colors.BOLD}{Colors.HEADER}=== BATCH MODE STARTED ({len(domains)} domains, {args.threads} threads) ==={Colors.ENDC}\n")
         dns_header = "PROPAGATION" if args.expect else "DNS"
-        print(f"{'DOMAIN':<30} | {dns_header:<12} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
+        print(f"{'.':<30} | {dns_header:<12} | {'HTTP':<15} | {'TCP':<6} | {'DNSSEC':<10}")
         print("-" * 85)
         
-        # Parallel Execution
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
-            # Map domains to futures
             futures = {executor.submit(run_diagnostics_wrapper, d, origin, expect, args.metrics, False, True): d for d in domains}
-            
             for future in concurrent.futures.as_completed(futures):
                 try:
                     res = future.result()
-                    # Print row safely
                     with console_lock:
                         print(f"{res['domain']:<30} | {res['dns']:<12} | {res['http']:<15} | {res['tcp']:<6} | {str(res['dnssec']):<10}")
                 except Exception as e:
@@ -889,8 +914,6 @@ def main() -> None:
 
         print(f"\n{Colors.OKGREEN}Batch Complete. Detailed reports in reports/{Colors.ENDC}")
     else:
-        # Single Mode
-        # Use wrapper or set manually
         l = FileLogger(verbose=args.verbose, silent=False)
         set_logger(l)
         run_diagnostics_impl(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics)

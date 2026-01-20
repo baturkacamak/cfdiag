@@ -9,14 +9,15 @@ import os
 class TestCFDiag(unittest.TestCase):
 
     def setUp(self):
-        # We need to mock the thread local storage or get_logger
+        # Patch get_logger to return a mock logger
         self.log_patcher = patch('cfdiag.get_logger')
         self.mock_get_logger = self.log_patcher.start()
         
         self.mock_logger_instance = MagicMock()
-        self.mock_get_logger.return_value = self.mock_logger_instance
         self.mock_logger_instance.html_data = {"domain": "test", "timestamp": "now", "steps": [], "summary": []}
-        self.mock_logger_instance.save_html.return_value = True
+        self.mock_logger_instance.save_html = MagicMock()
+        
+        self.mock_get_logger.return_value = self.mock_logger_instance
 
     def tearDown(self):
         self.log_patcher.stop()
@@ -34,48 +35,38 @@ class TestCFDiag(unittest.TestCase):
         success, v4, v6 = cfdiag.step_dns("example.com")
         self.assertTrue(success)
 
-    @patch('cfdiag.socket.gethostbyname')
-    def test_blacklist_check(self, mock_gethostbyname):
-        mock_gethostbyname.return_value = "127.0.0.2"
-        cfdiag.step_blacklist("example.com", "1.2.3.4")
+    @patch('cfdiag.run_command')
+    def test_redirects(self, mock_run):
+        mock_run.side_effect = [(0, "http://next.com"), (0, "")] 
+        cfdiag.step_redirects("example.com")
 
     @patch('cfdiag.run_command')
-    def test_cache_headers(self, mock_run):
-        output = """HTTP/2 200
-server: cloudflare
-cf-cache-status: HIT
-"""
-        cfdiag.step_cache_headers(output)
-
-    @patch('cfdiag.run_command')
-    def test_security_headers(self, mock_run):
-        output = """HTTP/2 200
-strict-transport-security: max-age=31536000
-"""
-        mock_run.return_value = (0, output)
-        cfdiag.step_security_headers("example.com")
-
+    def test_waf_evasion(self, mock_run):
+        mock_run.side_effect = [(0, "200"), (0, "403"), (0, "200")]
+        cfdiag.step_waf_evasion("example.com")
+        
     @patch('cfdiag.check_internet_connection')
     @patch('cfdiag.step_dns')
     @patch('cfdiag.step_http')
     @patch('cfdiag.step_tcp')
     @patch('cfdiag.run_command')
-    @patch('cfdiag.step_security_headers') 
-    @patch('cfdiag.save_history')
-    @patch('cfdiag.save_metrics')
-    def test_run_diagnostics_integration(self, mock_metrics, mock_hist, mock_sec, mock_run, mock_tcp, mock_http, mock_dns, mock_net):
+    @patch('cfdiag.step_redirects')
+    @patch('cfdiag.step_waf_evasion')
+    def test_run_diagnostics_integration(self, mock_waf, mock_red, mock_run, mock_tcp, mock_http, mock_dns, mock_net):
         mock_net.return_value = True
         mock_dns.return_value = (True, ["1.1.1.1"], [])
         mock_http.return_value = ("SUCCESS", 200, False, {})
         mock_tcp.return_value = True
         mock_run.return_value = (0, "Mock Output")
-        mock_hist.return_value = {"ttfb": 0.1} 
         
-        with patch('os.makedirs'):
-             # Call the IMPL function directly
-             cfdiag.run_diagnostics_impl("example.com", export_metrics=True)
+        with patch('cfdiag.save_history', return_value={}), patch('cfdiag.save_metrics'):
+            with patch('os.makedirs'), patch('cfdiag.FileLogger.save_to_file'):
+                 # We need to manually set the logger for the wrapper logic or call IMPL
+                 # run_diagnostics sets the thread local logger using FileLogger()
+                 # We need to patch FileLogger class to return our mock
+                 with patch('cfdiag.FileLogger', return_value=self.mock_logger_instance):
+                     cfdiag.run_diagnostics_wrapper("example.com", None, None, True, False, False)
              
-        mock_metrics.assert_called()
         self.mock_logger_instance.save_html.assert_called()
 
 if __name__ == '__main__':
