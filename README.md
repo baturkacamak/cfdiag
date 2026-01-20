@@ -8,9 +8,11 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 
 ### Core Diagnostics
 *   **Dual-Stack DNS Analysis:** Verifies both **IPv4** (A) and **IPv6** (AAAA) resolution.
+*   **DNSSEC Validation:** Checks if the domain's chain of trust is intact or broken.
 *   **Domain Registration Status:** Checks RDAP data to see if the domain is active, suspended, or expired.
 *   **ISP/ASN Detection:** Automatically identifies the hosting provider (e.g., AWS, DigitalOcean) of the resolved IP.
 *   **HTTP Inspection:** Smarter than just `ping`. Detects specific HTTP error codes (522, 525, 502) and analyzes headers.
+*   **HTTP/3 (QUIC) Check:** Verifies if UDP Port 443 is open/filtered.
 *   **SSL/TLS Handshake:** Verifies certificate validity and expiration dates using native Python SSL libraries.
 *   **TCP Connectivity:** Checks if port 443 is actually open using native sockets (no `nc` required).
 
@@ -22,6 +24,7 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 *   **Alternative Port Scan:** If port 443 is blocked, it automatically scans valid Cloudflare alternative ports (2053, 8443, 2083, etc.) to find a workaround.
 
 ### Utilities
+*   **Batch Mode:** Scan a list of domains from a file: `cfdiag --file domains.txt`
 *   **Self-Update:** Run with `--update` to automatically pull the latest version from GitHub.
 *   **Reporting:** Beautiful console output and clean Markdown file logs in `reports/`.
 
@@ -29,7 +32,7 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 
 ### Requirements
 *   **Python 3.6+**
-*   **System Tools:** `curl`, `traceroute` (Linux/Mac) or `tracert` (Windows), `ping`.
+*   **System Tools:** `curl`, `traceroute` (Linux/Mac) or `tracert` (Windows), `ping`, `dig` (Optional, for DNSSEC).
     *   *Note: Windows 10/11 includes `curl` and `tracert` by default.*
 
 ### Setup
@@ -50,6 +53,12 @@ python cfdiag.py example.com
 Run a full diagnostic on a domain:
 ```bash
 ./cfdiag example.com
+```
+
+### Batch Mode
+Check multiple domains at once:
+```bash
+./cfdiag --file my_domains.txt
 ```
 
 ### Power User Usage (Direct Origin Test)
