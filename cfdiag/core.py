@@ -46,11 +46,13 @@ def load_config(profile_name: Optional[str] = None) -> Dict[str, Any]:
 def self_update() -> None: 
     import urllib.request
     import re
+    import ssl
     from .utils import REPO_URL
     
     print(f"Checking for updates (Current: {VERSION})...")
-    try:
-        with urllib.request.urlopen(REPO_URL, timeout=5) as response:
+    
+    def fetch_url(context=None):
+        with urllib.request.urlopen(REPO_URL, timeout=5, context=context) as response:
             if response.status != 200: return
             new_code = response.read().decode('utf-8')
             match = re.search(r'VERSION = "([\d\.]+)"', new_code)
@@ -59,7 +61,29 @@ def self_update() -> None:
                 print("Please update via 'pip install --upgrade cfdiag' or your package manager.")
             else:
                 print("You are already running the latest version.")
+
+    try:
+        # 1. Try secure default
+        context = ssl.create_default_context()
+        try:
+            import certifi
+            context.load_verify_locations(cafile=certifi.where())
+        except ImportError:
+            pass # certifi not installed, ignore
+            
+        fetch_url(context)
+        
     except Exception as e:
+        # 2. Fallback for macOS/Cert issues
+        if "CERTIFICATE_VERIFY_FAILED" in str(e):
+            try:
+                # Only print if verbose? No, this is a direct user action (--update)
+                print(f"{Colors.WARNING}SSL verification failed. Retrying unverified...{Colors.ENDC}")
+                context = ssl._create_unverified_context()
+                fetch_url(context)
+                return
+            except:
+                pass
         print(f"Update failed: {e}")
 
 def generate_grafana() -> None:
