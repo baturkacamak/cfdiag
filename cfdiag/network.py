@@ -8,7 +8,6 @@ import re
 import json
 import os
 import time
-import concurrent.futures
 from typing import Tuple, List, Dict, Optional
 from .utils import get_curl_flags, PUBLIC_RESOLVERS, DNSBL_LIST, USER_AGENTS, console_lock, Colors
 from .reporting import (
@@ -363,13 +362,10 @@ def step_security_headers(domain: str) -> None:
 
 def step_http3_udp(domain: str) -> bool:
     print_subheader("8. HTTP/3 (QUIC) Check")
-    from .utils import get_context
-    ctx = get_context()
-    timeout = int(ctx.get('timeout', 2))
     l = get_logger()
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.settimeout(timeout)
+        sock.settimeout(2)
         sock.sendto(b"PING", (domain, 443))
         print_success("UDP 443 Open.")
         if l: l.add_html_step("HTTP/3", "PASS", "UDP 443 Open")
@@ -416,10 +412,10 @@ def step_ocsp(domain: str) -> None:
 
 def step_tcp(domain: str) -> bool:
     print_subheader("10. TCP Connectivity")
+    l = get_logger()
     from .utils import get_context
     ctx = get_context()
     timeout = int(ctx.get('timeout', 5))
-    l = get_logger()
     try:
         with socket.create_connection((domain, 443), timeout=timeout):
             print_success("Connected.")
@@ -430,31 +426,49 @@ def step_tcp(domain: str) -> bool:
         return False
 
 def step_mtu(domain: str) -> bool:
+    # Feature: Real MTU Discovery
     print_subheader("11. MTU Check")
-    return True
-
-def get_traceroute_hops(domain: str) -> List[str]:
-    cmd = f"tracert -h 15 {domain}" if os.name == 'nt' else f"traceroute -m 15 -w 2 {domain}"
-    from .utils import get_context
-    ctx = get_context()
-    flags = ""
-    if ctx.get('ipv4'): flags = " -4"
-    if ctx.get('ipv6'): flags = " -6"
-    if "traceroute" in cmd: cmd = cmd.replace("traceroute", f"traceroute{flags}")
+    l = get_logger()
     
-    c, out = run_command(cmd, timeout=60, log_output_to_file=False, show_output=False)
-    hops = []
-    if c == 0:
-        ips = re.findall(r'\((\d+\.\d+\.\d+\.\d+|[a-fA-F0-9:]+)\)', out)
-        if not ips:
-            ips = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', out)
+    # Determine ping command style
+    is_windows = os.name == 'nt'
+    
+    # Sizes to test (Packet size, not payload. Payload = Size - 28)
+    # We set payload size.
+    # Max standard MTU 1500. Headers 28. Max payload 1472.
+    test_sizes = [1472, 1464, 1452, 1432, 1372, 1272] 
+    # Corresponds to MTU: 1500, 1492 (PPPoE), 1480, 1460, 1400, 1300
+    
+    found_mtu = 0
+    
+    for size in test_sizes:
+        # Construct command
+        if is_windows:
+            cmd = f"ping -n 1 -f -l {size} {domain}"
+        else:
+            # Linux/Mac. Mac uses -D for DF? Linux uses -M do.
+            if sys.platform == "darwin":
+                cmd = f"ping -c 1 -D -s {size} {domain}"
+            else:
+                cmd = f"ping -c 1 -M do -s {size} {domain}"
         
-        seen = set()
-        for ip in ips:
-            if ip not in seen and not ip.startswith("0."):
-                hops.append(ip)
-                seen.add(ip)
-    return hops
+        c, out = run_command(cmd, show_output=False, log_output_to_file=False)
+        
+        if c == 0:
+            found_mtu = size + 28
+            print_success(f"Packet size {size} (MTU {found_mtu}): OK")
+            break # Found highest working
+        else:
+            print_info(f"Packet size {size} (MTU {size+28}): Fragmented/Dropped")
+    
+    if found_mtu:
+        print_success(f"Estimated Max MTU: {found_mtu}")
+        if l: l.add_html_step("MTU", "PASS", f"MTU: {found_mtu}")
+        return True
+    else:
+        print_warning("MTU Check failed or blocked.")
+        if l: l.add_html_step("MTU", "WARN", "Failed")
+        return False
 
 def step_traceroute(domain: str) -> None:
     print_subheader("12. Traceroute")
@@ -622,6 +636,69 @@ def ping_host(host: str) -> float:
         if m: return float(m.group(1))
     return -1.0
 
+def step_websocket(domain: str, path: str = "/") -> None: # Feature: WebSocket Handshake
+    print_subheader("22. WebSocket Handshake Check")
+    from .utils import get_context
+    ctx = get_context()
+    l = get_logger()
+    
+    host = domain
+    port = 443
+    
+    # Simple handshake
+    request = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {domain}\r\n"
+        f"Upgrade: websocket\r\n"
+        f"Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        f"Sec-WebSocket-Version: 13\r\n"
+        f"\r\n"
+    )
+    
+    try:
+        context = ssl.create_default_context()
+        timeout = int(ctx.get('timeout', 5))
+        
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            with context.wrap_socket(sock, server_hostname=domain) as ssock:
+                ssock.sendall(request.encode())
+                response = ssock.recv(4096).decode(errors='ignore')
+                
+                if "101 Switching Protocols" in response:
+                    print_success("WebSocket Handshake: Success (101 Switching Protocols)")
+                    if l: l.add_html_step("WebSocket", "PASS", "Connected")
+                else:
+                    status_line = response.split('\r\n')[0] if response else "No response"
+                    print_fail(f"WebSocket Handshake Failed: {status_line}")
+                    if l: l.add_html_step("WebSocket", "FAIL", status_line)
+                    
+    except Exception as e:
+        print_fail(f"WebSocket Error: {e}")
+        if l: l.add_html_step("WebSocket", "FAIL", str(e))
+
+def get_traceroute_hops(domain: str) -> List[str]:
+    cmd = f"tracert -h 15 {domain}" if os.name == 'nt' else f"traceroute -m 15 -w 2 {domain}"
+    from .utils import get_context
+    ctx = get_context()
+    flags = ""
+    if ctx.get('ipv4'): flags = " -4"
+    if ctx.get('ipv6'): flags = " -6"
+    if "traceroute" in cmd: cmd = cmd.replace("traceroute", f"traceroute{flags}")
+    
+    c, out = run_command(cmd, timeout=60, log_output_to_file=False, show_output=False)
+    hops = []
+    if c == 0:
+        ips = re.findall(r'\((\d+\.\d+\.\d+\.\d+|[a-fA-F0-9:]+)\)', out)
+        if not ips:
+            ips = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', out)
+        seen = set()
+        for ip in ips:
+            if ip not in seen and not ip.startswith("0."):
+                hops.append(ip)
+                seen.add(ip)
+    return hops
+
 def run_mtr(domain: str) -> None:
     print(f"Tracing route to {domain}...")
     hops = get_traceroute_hops(domain)
@@ -633,9 +710,10 @@ def run_mtr(domain: str) -> None:
     
     try:
         while True:
+            # Clear screen
             os.system('cls' if os.name == 'nt' else 'clear')
             print(f"{Colors.BOLD}--- MTR Mode: {domain} (Ctrl+C to quit) ---{Colors.ENDC}")
-            print(f"{'HOST':<30} | {'LOSS%':<6} | {'AVG':<6} | {'LAST':<6}")
+            print(f"{ 'HOST':<30} | {'LOSS%':<6} | {'AVG':<6} | {'LAST':<6}")
             print("-" * 60)
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:

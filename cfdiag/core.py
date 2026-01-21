@@ -19,6 +19,7 @@ from .network import (
     step_traceroute, step_cf_trace, step_cf_forced, step_origin,
     step_alt_ports, step_redirects, step_waf_evasion,
     step_speed, step_dns_benchmark, step_doh, step_graph,
+    step_websocket,
     get_traceroute_hops, ping_host, run_mtr
 )
 from .system import step_lint_config, step_audit
@@ -41,7 +42,7 @@ def load_config(profile_name: Optional[str] = None) -> Dict[str, Any]:
     if profile_name: return config.get("profiles", {}).get(profile_name, {}) # type: ignore
     return config
 
-def self_update() -> None:
+def self_update() -> None: 
     import urllib.request
     import re
     from .utils import REPO_URL
@@ -150,7 +151,7 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
     l.log_console(f"\n{Colors.GREY}{SEPARATOR}{Colors.ENDC}", force=True)
     l.log_file(f"\n{SEPARATOR}")
 
-def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False, speed_test: bool=False, dns_benchmark: bool=False, doh_check: bool=False, audit: bool=False) -> Dict[str, Any]:
+def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False, speed_test: bool=False, dns_benchmark: bool=False, doh_check: bool=False, audit: bool=False, ws_check: bool=False) -> Dict[str, Any]:
     reports_dir = "reports"
     domain_dir = os.path.join(reports_dir, domain)
     if not os.path.exists(domain_dir): os.makedirs(domain_dir)
@@ -175,6 +176,9 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     http_res = step_http(domain)
     step_security_headers(domain)
     step_http3_udp(domain)
+    
+    if ws_check: step_websocket(domain)
+    
     ssl_ok = step_ssl(domain)
     step_ocsp(domain)
     tcp_ok = step_tcp(domain)
@@ -243,8 +247,8 @@ _cfdiag()
     local cur prev opts
     COMPREPLY=()
     cur=\"${COMP_WORDS[COMP_CWORD]}\"
-    prev=\"${COMP_WORDS[COMP_CWORD-1]}\"
-    opts=\"--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion --grafana --keylog --watch --notify --speed --benchmark-dns --doh --audit --lint-config --graph --mtr --serve --analyze-logs\"
+    prev=\"${COMP_WORDS[COMP_CWORD-1]}\" 
+    opts=\"--origin --expect --profile --file --verbose --no-color --diff --version --update --metrics --threads --ipv4 --ipv6 --proxy --json --completion --grafana --keylog --watch --notify --speed --benchmark-dns --doh --audit --lint-config --graph --mtr --serve --analyze-logs --ws\"
 
     if [[ ${cur} == -* ]] ; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -289,6 +293,7 @@ _cfdiag() {
         '--mtr[Run interactive MTR trace]'
         '--serve[Start diagnostic HTTP server on port]:port'
         '--analyze-logs[Analyze web server access logs]:filename:_files'
+        '--ws[Run WebSocket Handshake Check]'
     )
     _arguments "${args[@]}"
 }
@@ -336,6 +341,7 @@ def main() -> None:
     parser.add_argument("--mtr", action="store_true", help="Run interactive MTR")
     parser.add_argument("--serve", type=int, nargs='?', const=8080, help="Start diagnostic server (default port 8080)")
     parser.add_argument("--analyze-logs", help="Analyze access log file")
+    parser.add_argument("--ws", action="store_true", help="Run WebSocket Handshake Check")
     
     args = parser.parse_args()
     
@@ -411,17 +417,17 @@ def main() -> None:
             try:
                 while True:
                     os.system('cls' if os.name == 'nt' else 'clear')
-                    print(f"{Colors.BOLD}--- Watch Mode (Ctrl+C to stop) ---{Colors.ENDC}")
+                    print(f"{Colors.BOLD}--- Watch Mode (Ctrl+C to stop) ---")
                     l = FileLogger(verbose=args.verbose, silent=silent)
                     set_logger(l)
                     
-                    result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics, args.speed, args.benchmark_dns, args.doh, args.audit)
+                    result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics, args.speed, args.benchmark_dns, args.doh, args.audit, args.ws)
                     time.sleep(5)
             except KeyboardInterrupt:
                 print("\nStopped.")
                 sys.exit(0)
         else:
-            result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics, args.speed, args.benchmark_dns, args.doh, args.audit)
+            result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin, expect, args.metrics, args.speed, args.benchmark_dns, args.doh, args.audit, args.ws)
             
             if args.graph:
                 step_graph(domain)
