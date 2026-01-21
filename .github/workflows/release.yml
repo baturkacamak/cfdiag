@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-13]
+        os: [ubuntu-latest, windows-latest, macos-13, macos-latest]
         include:
           - os: ubuntu-latest
             artifact_name: cfdiag
@@ -25,6 +25,9 @@ jobs:
           - os: macos-13
             artifact_name: cfdiag
             asset_name: cfdiag-macos-amd64
+          - os: macos-latest
+            artifact_name: cfdiag
+            asset_name: cfdiag-macos-arm64
 
     steps:
       - uses: actions/checkout@v4
@@ -89,17 +92,21 @@ jobs:
 
       - name: Rename Binaries for Release
         run: |
-          # Artifacts are downloaded into directories named after the artifact
-          # Structure:
-          # cfdiag-linux-amd64/cfdiag
-          # cfdiag-windows-amd64/cfdiag.exe
-          # cfdiag-macos-amd64/cfdiag
-          
           mkdir release_assets
           
+          # Linux
           cp cfdiag-linux-amd64/cfdiag release_assets/cfdiag-linux-amd64
+          
+          # Windows
           cp cfdiag-windows-amd64/cfdiag.exe release_assets/cfdiag-windows-amd64.exe
+          
+          # macOS Intel
           cp cfdiag-macos-amd64/cfdiag release_assets/cfdiag-macos-amd64
+          
+          # macOS ARM
+          cp cfdiag-macos-arm64/cfdiag release_assets/cfdiag-macos-arm64
+          
+          # Debian
           cp cfdiag-deb/*.deb release_assets/
 
       - name: List Files

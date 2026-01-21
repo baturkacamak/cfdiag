@@ -2,8 +2,6 @@
 
 A professional-grade, cross-platform (**Linux, macOS, Windows**) diagnostic CLI tool for Cloudflare Error 522, 525, 502, and general connectivity issues.
 
-It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and Python's powerful networking libraries to perform a deep-dive analysis of the connection path between you, Cloudflare, and the Origin server.
-
 ## Features
 
 ### Core Diagnostics
@@ -37,18 +35,26 @@ It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and
 ### Option 1: Standalone Binary (Recommended)
 Download the latest single-file executable for your OS from the [Releases Page](https://github.com/baturkacamak/cfdiag/releases). No Python installation required.
 
-> **macOS Users:** If you see "Apple cannot check it for malicious software", you can allow it via System Settings > Security & Privacy, or run this command on the downloaded file:
-> `xattr -d com.apple.quarantine cfdiag-macos-amd64`
+*   **Windows:** `cfdiag-windows-amd64.exe`
+*   **macOS (Intel):** `cfdiag-macos-amd64`
+*   **macOS (Apple Silicon/M1/M2):** `cfdiag-macos-arm64`
+*   **Linux:** `cfdiag-linux-amd64`
+
+> **macOS Gatekeeper:** If you see "Apple cannot check it for malicious software", run:
+> `xattr -d com.apple.quarantine cfdiag-macos-*`
 
 ### Option 2: Homebrew (macOS/Linux)
-Install directly from the formula:
+Since this repository is not a standard Homebrew Tap, you must tap it with the URL:
 ```bash
-brew install https://raw.githubusercontent.com/baturkacamak/cfdiag/main/Formula/cfdiag.rb
+brew tap baturkacamak/cfdiag https://github.com/baturkacamak/cfdiag
+brew install cfdiag
 ```
 
 ### Option 3: Pip (Python Package)
 ```bash
-# Install from source (requires Python 3.10+)
+# Install from local source (requires cloning repo)
+git clone https://github.com/baturkacamak/cfdiag.git
+cd cfdiag
 pip install .
 ```
 
