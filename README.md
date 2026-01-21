@@ -58,6 +58,10 @@ docker build -t cfdiag .
 docker run --rm cfdiag example.com
 ```
 
+### Option 4: Homebrew (Unofficial)
+This project does not maintain an official Homebrew Tap.
+A formula file is available in `contrib/homebrew/cfdiag.rb` for manual use.
+
 ## Usage
 
 ### Basic Usage
