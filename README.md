@@ -8,6 +8,7 @@ A professional-grade, cross-platform (**Linux, macOS, Windows**) diagnostic CLI 
 *   **Dual-Stack DNS Analysis:** Verifies both **IPv4** (A) and **IPv6** (AAAA) resolution.
 *   **Offline ASN Detection:** Uses DNS-based lookup to identify ISPs/ASNs without external HTTP APIs (Privacy-first).
 *   **DNS Propagation Check:** Checks global resolvers (Google, Cloudflare, Quad9, etc.) to see if your Nameserver changes have propagated worldwide.
+*   **DNS-over-HTTPS (DoH):** Tests connectivity to Cloudflare DNS via HTTPS to detect ISP filtering.
 *   **DNSSEC Validation:** Checks if the domain's chain of trust is intact or broken.
 *   **SSL/TLS Handshake:** Verifies certificate validity, expiration, and **OCSP Stapling** status.
 *   **HTTP/3 (QUIC) Check:** Verifies if UDP Port 443 is open/filtered.
@@ -43,14 +44,7 @@ Download the latest single-file executable for your OS from the [Releases Page](
 > **macOS Gatekeeper:** If you see "Apple cannot check it for malicious software", run:
 > `xattr -d com.apple.quarantine cfdiag-macos-*`
 
-### Option 2: Homebrew (macOS/Linux)
-Since this repository is not a standard Homebrew Tap, you must tap it with the URL:
-```bash
-brew tap baturkacamak/cfdiag https://github.com/baturkacamak/cfdiag
-brew install cfdiag
-```
-
-### Option 3: Pip (Python Package)
+### Option 2: Pip (Python Package)
 ```bash
 # Install from local source (requires cloning repo)
 git clone https://github.com/baturkacamak/cfdiag.git
@@ -58,7 +52,7 @@ cd cfdiag
 pip install .
 ```
 
-### Option 4: Docker
+### Option 3: Docker
 ```bash
 docker build -t cfdiag .
 docker run --rm cfdiag example.com
