@@ -22,11 +22,14 @@ jobs:
       with:
         python-version: '3.x'
 
-    - name: Install Dependencies (Linux)
-      if: runner.os == 'Linux'
+    - name: Install System Dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y dnsutils netcat traceroute iputils-ping curl openssl
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          sudo apt-get update
+          sudo apt-get install -y dnsutils netcat-openbsd traceroute iputils-ping curl openssl
+        elif [ "$RUNNER_OS" == "macOS" ]; then
+          brew install bind curl netcat traceroute openssl
+        fi
 
     - name: Install Dependencies (macOS)
       if: runner.os == 'macOS'
