@@ -28,13 +28,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y dnsutils netcat-openbsd traceroute iputils-ping curl openssl
         elif [ "$RUNNER_OS" == "macOS" ]; then
-          brew install bind curl netcat traceroute openssl
+          brew install bind curl netcat openssl
         fi
 
-    - name: Install Dependencies (macOS)
-      if: runner.os == 'macOS'
+    - name: Install Python Dependencies
       run: |
-        brew install bind curl netcat traceroute openssl
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install -e .
 
     - name: Run Tests
-      run: python test_cfdiag.py
+      run: python3 tests/test_cfdiag.py
