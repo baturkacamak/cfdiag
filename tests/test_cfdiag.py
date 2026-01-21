@@ -79,7 +79,7 @@ class TestReporting(unittest.TestCase):
         with patch('builtins.open', mock_open()) as m:
             self.logger.save_markdown("out.md")
             args = m().write.call_args[0][0]
-            self.assertIn("| DNS | ✅ PASS |", args)
+            self.assertIn("| DNS | [PASS] PASS |", args)
 
     def test_save_junit(self):
         self.logger.html_data['steps'].append({"title": "DNS", "status": "FAIL", "details": "timeout"})

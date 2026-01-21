@@ -51,7 +51,7 @@ class FileLogger:
 
     def save_to_file(self, filename: str) -> bool:
         try:
-            with open(filename, 'w') as f:
+            with open(filename, 'w', encoding='utf-8') as f:
                 f.write("".join(self.file_buffer))
             return True
         except Exception as e:
@@ -97,7 +97,7 @@ class FileLogger:
                 html_parts.append(f"<li>{line}</li>")
         html_parts.append("</ul></div></div></body></html>")
         try:
-            with open(filename, 'w') as f: f.write("\n".join(html_parts))
+            with open(filename, 'w', encoding='utf-8') as f: f.write("\n".join(html_parts))
             return True
         except: return False
 
@@ -116,7 +116,7 @@ class FileLogger:
             for line in summary:
                 if ":" in line:
                     k, v = line.split(":", 1)
-                    icon = "✅" if "PASS" in v or "OK" in v or "SUCCESS" in v else ("❌" if "FAIL" in v else "⚠️")
+                    icon = "[PASS]" if "PASS" in v or "OK" in v or "SUCCESS" in v else ("[FAIL]" if "FAIL" in v else "[WARN]")
                     lines.append(f"| {k.strip()} | {icon} {v.strip()} |")
         lines.append("")
         lines.append("## Detailed Steps")
@@ -127,7 +127,7 @@ class FileLogger:
                     status = step.get('status', 'INFO')
                     title = step.get('title', '')
                     details = step.get('details', '')
-                    icon = "✅" if status == "PASS" else ("❌" if status == "FAIL" else ("⚠️" if status == "WARN" else "ℹ️"))
+                    icon = "[PASS]" if status == "PASS" else ("[FAIL]" if status == "FAIL" else ("[WARN]" if status == "WARN" else "[INFO]"))
                     lines.append(f"### {icon} {title}")
                     lines.append(f"**Status:** {status}")
                     lines.append("```")
@@ -135,7 +135,7 @@ class FileLogger:
                     lines.append("```")
                     lines.append("")
         try:
-            with open(filename, 'w') as f: f.write("\n".join(lines))
+            with open(filename, 'w', encoding='utf-8') as f: f.write("\n".join(lines))
             return True
         except: return False
 
@@ -164,7 +164,7 @@ class FileLogger:
         xml.extend(testcases)
         xml.append('</testsuite></testsuites>')
         try:
-            with open(filename, 'w') as f: f.write("\n".join(xml))
+            with open(filename, 'w', encoding='utf-8') as f: f.write("\n".join(xml))
             return True
         except: return False
 
@@ -176,7 +176,7 @@ def send_webhook(url: str, domain: str, result_dict: Dict[str, Any]) -> None:
         http = result_dict.get('http', 'Unknown')
         
         payload = {
-            "text": f"✅ cfdiag scan finished for *{domain}*.\nDNS: {dns}\nHTTP: {http}"
+            "text": f"cfdiag scan finished for *{domain}*.\nDNS: {dns}\nHTTP: {http}"
         }
         data = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
@@ -208,19 +208,19 @@ def print_subheader(title: str) -> None:
 
 def print_success(msg: str) -> None:
     l = get_logger()
-    if l: l.log(f"{Colors.OKGREEN}{Colors.BOLD}✔ [PASS]{Colors.ENDC} {msg}", file_msg=f"[PASS] {msg}")
+    if l: l.log(f"{Colors.OKGREEN}{Colors.BOLD}+ [PASS]{Colors.ENDC} {msg}", file_msg=f"[PASS] {msg}")
 
 def print_fail(msg: str) -> None:
     l = get_logger()
-    if l: l.log(f"{Colors.FAIL}{Colors.BOLD}✖ [FAIL]{Colors.ENDC} {msg}", file_msg=f"[FAIL] {msg}")
+    if l: l.log(f"{Colors.FAIL}{Colors.BOLD}x [FAIL]{Colors.ENDC} {msg}", file_msg=f"[FAIL] {msg}")
 
 def print_info(msg: str) -> None:
     l = get_logger()
-    if l: l.log(f"{Colors.OKBLUE}ℹ [INFO]{Colors.ENDC} {msg}", file_msg=f"[INFO] {msg}")
+    if l: l.log(f"{Colors.OKBLUE}* [INFO]{Colors.ENDC} {msg}", file_msg=f"[INFO] {msg}")
 
 def print_warning(msg: str) -> None:
     l = get_logger()
-    if l: l.log(f"{Colors.WARNING}{Colors.BOLD}⚠ [WARN]{Colors.ENDC} {msg}", file_msg=f"[WARN] {msg}")
+    if l: l.log(f"{Colors.WARNING}{Colors.BOLD}! [WARN]{Colors.ENDC} {msg}", file_msg=f"[WARN] {msg}")
 
 def print_skip(msg: str) -> None:
     l = get_logger()
@@ -237,7 +237,7 @@ def compare_reports(file1: str, file2: str) -> None:
     print(f"A: {file1}")
     print(f"B: {file2}\n")
     try:
-        with open(file1, 'r') as f1, open(file2, 'r') as f2:
+        with open(file1, 'r', encoding='utf-8') as f1, open(file2, 'r', encoding='utf-8') as f2:
             lines1 = f1.readlines()
             lines2 = f2.readlines()
         def extract_summary(lines):
@@ -276,10 +276,10 @@ def save_history(domain: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
     prev_data = {}
     if os.path.exists(history_file):
         try:
-            with open(history_file, 'r') as f: prev_data = json.load(f)
+            with open(history_file, 'r', encoding='utf-8') as f: prev_data = json.load(f)
         except: pass
     try:
-        with open(history_file, 'w') as f: json.dump(metrics, f)
+        with open(history_file, 'w', encoding='utf-8') as f: json.dump(metrics, f)
     except: pass
     return prev_data
 
@@ -295,5 +295,5 @@ def save_metrics(domain: str, metrics: Dict[str, Any]):
     lines.append("# TYPE cfdiag_up gauge")
     lines.append(f'cfdiag_up{{domain="{domain}"}} {up}')
     try:
-        with open(prom_file, 'w') as f: f.write("\n".join(lines))
+        with open(prom_file, 'w', encoding='utf-8') as f: f.write("\n".join(lines))
     except: pass

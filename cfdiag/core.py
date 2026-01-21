@@ -543,7 +543,7 @@ def main() -> None:
             if args.json:
                 print(json.dumps(result, indent=4))
             else:
-                if not args.verbose: print(f"\n{Colors.OKBLUE}📄 Reports saved to reports/{domain}/ folder.{Colors.ENDC}")
+                if not args.verbose: print(f"\n{Colors.OKBLUE}Reports saved to reports/{domain}/ folder.{Colors.ENDC}")
             
             if args.notify:
                 send_webhook(args.notify, domain, result)
