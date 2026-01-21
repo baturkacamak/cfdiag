@@ -19,13 +19,10 @@ A professional-grade, cross-platform (**Linux, macOS, Windows**) diagnostic CLI 
 *   **WAF Evasion Test:** Retries requests with different User-Agents (Chrome, Googlebot, etc.) to detect if a block is due to Bot Protection.
 *   **Direct Origin Test:** (Using `--origin <IP>`) Bypasses Cloudflare to connect directly to your server. Definitively proves if the issue is a firewall blocking Cloudflare IPs.
 *   **Report Comparison:** Diff two reports (`--diff old.txt new.txt`) to spot exactly what changed (Latency, Routes, IPs).
-*   **Real Path MTU:** Active packet size testing (`ping -f`) to detect blackholes.
-*   **WebSocket Test:** Verifies connection upgrades (`101 Switching Protocols`) for real-time apps (`--ws`).
+*   **MTU/Fragmentation Check:** Tests packet sizes to detect Path MTU Discovery blackholes.
 *   **SSL Key Logging:** Decrypt traffic in Wireshark by dumping session keys (`--keylog keys.log`).
 
 ### Utilities & Audit
-*   **Log Analyzer:** Parses web server access logs for Cloudflare error codes 520-530 (`--analyze-logs`).
-*   **Diagnostic Server:** Starts a local HTTP server to echo headers and test timeouts (`--serve`).
 *   **Configuration Linter:** Scans web server config (`nginx.conf`) for missing Cloudflare Real IP directives (`--lint-config`).
 *   **Security Audit:** Runs a strict Pass/Fail audit for compliance (`--audit`).
 *   **Throughput/Speed Test:** Measures download speed (`--speed`).
@@ -39,8 +36,19 @@ A professional-grade, cross-platform (**Linux, macOS, Windows**) diagnostic CLI 
 ### Option 1: Standalone Binary (Recommended)
 Download the latest single-file executable for your OS from the [Releases Page](https://github.com/baturkacamak/cfdiag/releases). No Python installation required.
 
+*   **Windows:** `cfdiag-windows-amd64.exe`
+*   **macOS (Intel):** `cfdiag-macos-amd64`
+*   **macOS (Apple Silicon/M1/M2):** `cfdiag-macos-arm64`
+*   **Linux:** `cfdiag-linux-amd64`
+
+> **macOS Gatekeeper:** If you see "Apple cannot check it for malicious software", run:
+> `xattr -d com.apple.quarantine cfdiag-macos-*`
+
 ### Option 2: Pip (Python Package)
 ```bash
+# Install from local source (requires cloning repo)
+git clone https://github.com/baturkacamak/cfdiag.git
+cd cfdiag
 pip install .
 ```
 
@@ -61,27 +69,19 @@ A formula file is available in `contrib/homebrew/cfdiag.rb` for manual use.
 cfdiag example.com
 ```
 
-### Advanced Network Debugging
-```bash
-# Test WebSockets, Speed, and Encrypted DNS
-cfdiag example.com --ws --speed --doh
-```
-
-### Server-Side Tools
-```bash
-# Analyze Nginx logs for 522 errors
-cfdiag --analyze-logs /var/log/nginx/access.log
-
-# Check config for Real IP setup
-cfdiag --lint-config /etc/nginx/nginx.conf
-
-# Start a dummy origin server on port 8080 (Echoes headers)
-cfdiag --serve 8080
-```
-
 ### Audit Mode
 ```bash
 cfdiag example.com --audit
+```
+
+### Config Check
+```bash
+cfdiag --lint-config /etc/nginx/nginx.conf
+```
+
+### Network Debugging
+```bash
+cfdiag example.com --doh --speed --benchmark-dns
 ```
 
 ### Automation
