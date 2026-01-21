@@ -292,7 +292,13 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
 
     step_cache_headers(output)
     
-    return ("SUCCESS" if 200<=status<400 else "FAIL"), status, False, metrics
+    res_str = "FAIL"
+    if 200 <= status < 400: res_str = "SUCCESS"
+    elif 400 <= status < 500: res_str = "CLIENT_ERROR"
+    elif 500 <= status < 600: res_str = "SERVER_ERROR"
+    elif code == 28: res_str = "TIMEOUT" # Curl timeout
+    
+    return res_str, status, False, metrics
 
 def step_cache_headers(http_output: str) -> None:
     headers = {}

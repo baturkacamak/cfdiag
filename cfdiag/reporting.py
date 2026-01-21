@@ -222,6 +222,10 @@ def print_warning(msg: str) -> None:
     l = get_logger()
     if l: l.log(f"{Colors.WARNING}{Colors.BOLD}⚠ [WARN]{Colors.ENDC} {msg}", file_msg=f"[WARN] {msg}")
 
+def print_skip(msg: str) -> None:
+    l = get_logger()
+    if l: l.log(f"{Colors.GREY}{Colors.BOLD}- [SKIP]{Colors.ENDC} {msg}", file_msg=f"[SKIP] {msg}")
+
 def print_cmd(cmd: str) -> None:
     l = get_logger()
     if l:
