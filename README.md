@@ -2,13 +2,14 @@
 
 A professional-grade, cross-platform (**Linux, macOS, Windows**) diagnostic CLI tool for Cloudflare Error 522, 525, 502, and general connectivity issues.
 
+It orchestrates native system tools (`curl`, `traceroute`/`tracert`, `ping`) and Python's powerful networking libraries to perform a deep-dive analysis of the connection path between you, Cloudflare, and the Origin server.
+
 ## Features
 
 ### Core Diagnostics
 *   **Dual-Stack DNS Analysis:** Verifies both **IPv4** (A) and **IPv6** (AAAA) resolution.
 *   **Offline ASN Detection:** Uses DNS-based lookup to identify ISPs/ASNs without external HTTP APIs (Privacy-first).
 *   **DNS Propagation Check:** Checks global resolvers (Google, Cloudflare, Quad9, etc.) to see if your Nameserver changes have propagated worldwide.
-*   **DNS-over-HTTPS (DoH):** Tests connectivity to Cloudflare DNS via HTTPS to detect ISP filtering.
 *   **DNSSEC Validation:** Checks if the domain's chain of trust is intact or broken.
 *   **SSL/TLS Handshake:** Verifies certificate validity, expiration, and **OCSP Stapling** status.
 *   **HTTP/3 (QUIC) Check:** Verifies if UDP Port 443 is open/filtered.
@@ -34,16 +35,27 @@ A professional-grade, cross-platform (**Linux, macOS, Windows**) diagnostic CLI 
 ## Installation
 
 ### Option 1: Standalone Binary (Recommended)
-Download from [Releases](https://github.com/baturkacamak/cfdiag/releases).
+Download the latest single-file executable for your OS from the [Releases Page](https://github.com/baturkacamak/cfdiag/releases). No Python installation required.
 
-### Option 2: Homebrew
+> **macOS Users:** If you see "Apple cannot check it for malicious software", you can allow it via System Settings > Security & Privacy, or run this command on the downloaded file:
+> `xattr -d com.apple.quarantine cfdiag-macos-amd64`
+
+### Option 2: Homebrew (macOS/Linux)
+Install directly from the formula:
 ```bash
-brew install baturkacamak/cfdiag/cfdiag
+brew install https://raw.githubusercontent.com/baturkacamak/cfdiag/main/Formula/cfdiag.rb
 ```
 
-### Option 3: Pip
+### Option 3: Pip (Python Package)
 ```bash
+# Install from source (requires Python 3.10+)
 pip install .
+```
+
+### Option 4: Docker
+```bash
+docker build -t cfdiag .
+docker run --rm cfdiag example.com
 ```
 
 ## Usage
