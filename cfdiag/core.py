@@ -355,6 +355,7 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
             "ipv4": ipv4,
             "ipv6": ipv6,
             "ssl_ok": ssl_ok,
+            "http_status": http_res[1],
             "http_metrics": http_res[3],
             "history_diff": history_diff
         }
