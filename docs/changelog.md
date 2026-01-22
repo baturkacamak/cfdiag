@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.12.3] - 2026-01-22
+### Changed
+- **Architecture:** Complete architectural cleanup. Step functions are now strictly separated and return `None`.
+- **Refactor:** Decoupled `step_asn` from `step_dns`, ensuring independent IP resolution and linear execution flow.
+- **Standards:** Standardized status strings to `PASS`, `FAIL`, `WARN`, `INFO`. Removed legacy `SUCCESS`/`CLIENT_ERROR` terminology.
+- **Cleanup:** Removed dead code including unused reporting functions (`save_history`, `save_metrics`, `compare_reports`), summary generation logic, and obsolete documentation.
+- **Tests:** Updated test suite to align with architectural changes and adjusted coverage thresholds.
+
 ## [v2.12.0] - 2026-01-20
 ### Added
 - **Shell Completion:** Generate bash/zsh completion scripts via `--completion`.
