@@ -9,13 +9,19 @@ import json
 import os
 import time
 from typing import Tuple, List, Dict, Optional
+
 from .utils import get_curl_flags, PUBLIC_RESOLVERS, DNSBL_LIST, USER_AGENTS, console_lock, Colors
 from .reporting import (
     get_logger, print_header, print_subheader, print_success, 
     print_fail, print_info, print_warning, print_cmd
 )
 
-def check_dependencies() -> None:
+# New Architecture Imports
+from .probes import probe_dns, probe_http, probe_tls, probe_mtu, probe_origin
+from .analysis import analyze_dns, analyze_http, analyze_tls, analyze_mtu, analyze_origin_reachability
+from .types import Severity
+
+def check_dependencies() -> None: 
     missing = []
     if not shutil.which("curl"): missing.append("curl")
     if not shutil.which("openssl"): missing.append("openssl")
@@ -71,42 +77,23 @@ def check_internet_connection() -> bool:
 
 def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
     print_subheader("1. DNS Resolution & ASN/ISP Check")
-    ips: List[str] = []
-    ipv4: List[str] = []
-    ipv6: List[str] = []
-    
-    from .utils import get_context
-    ctx = get_context()
-    family = socket.AF_UNSPEC
-    if ctx.get('ipv4'): family = socket.AF_INET
-    if ctx.get('ipv6'): family = socket.AF_INET6
-    
-    print_cmd(f"socket.getaddrinfo('{domain}', 443, family={family})")
     l = get_logger()
-    try:
-        info = socket.getaddrinfo(domain, 443, family=family, proto=socket.IPPROTO_TCP)
-        for _, _, _, _, sockaddr in info:
-            ip = sockaddr[0]
-            if ip not in ips:
-                ips.append(ip)
-                (ipv6 if ':' in ip else ipv4).append(ip)
-        
-        if l: l.log_file(f"Output:\n    IPv4: {ipv4}\n    IPv6: {ipv6}")
-        
+    
+    probe_res = probe_dns(domain)
+    analysis = analyze_dns(probe_res)
+    
+    ipv4 = probe_res.get("records", {}).get("A", [])
+    ipv6 = probe_res.get("records", {}).get("AAAA", [])
+    
+    if l: l.log_file(f"Probe Output: {probe_res.get('raw_output', '')}")
+    
+    if analysis["status"] in [Severity.PASS, Severity.INFO]:
         if ipv4: print_success(f"IPv4 Resolved: {Colors.WHITE}{', '.join(ipv4)}{Colors.ENDC}")
-        else: 
-            if ctx.get('ipv6'): pass
-            else: print_warning("No IPv4 records found.")
-            
-        if ipv6: print_success(f"IPv6 Resolved: {Colors.WHITE}{', '.join(ipv6)}{Colors.ENDC}")
-        else: 
-            if ctx.get('ipv4'): pass
-            else: print_info("No IPv6 records found.")
+        else: print_warning("No IPv4 records found.")
         
-        if not ips:
-            print_fail("DNS returned empty result.")
-            return False, [], []
-
+        if ipv6: print_success(f"IPv6 Resolved: {Colors.WHITE}{', '.join(ipv6)}{Colors.ENDC}")
+        else: print_info("No IPv6 records found.")
+        
         target_ip = ipv4[0] if ipv4 else (ipv6[0] if ipv6 else None)
         if target_ip and not target_ip.startswith(("192.168.", "10.", "127.", "::1")):
             if '.' in target_ip:
@@ -120,14 +107,146 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
                         country = parts[2].strip()
                         print_success(f"ASN Info: {Colors.WHITE}AS{asn} ({country}){Colors.ENDC}")
                         if l: l.log_file(f"ASN: AS{asn}, {country}")
-            
-        if l: l.add_html_step("DNS", "PASS" if ips else "FAIL", f"IPv4: {ipv4}\nIPv6: {ipv6}")
-        return True, ipv4, ipv6
-    except Exception as e:
-        print_fail(f"DNS resolution failed: {e}")
-        if l: l.add_html_step("DNS", "FAIL", str(e))
-        return False, [], []
+    else:
+        print_fail(f"{analysis['classification']}: {analysis['human_reason']}")
+    
+    status_str = "PASS" if analysis["status"] in [Severity.PASS, Severity.INFO] else "FAIL"
+    if l: l.add_html_step("DNS", status_str, analysis["human_reason"])
+    
+    return analysis["status"] in [Severity.PASS, Severity.INFO], ipv4, ipv6
 
+def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
+    print_subheader("7. HTTP/HTTPS Availability")
+    l = get_logger()
+    
+    probe_res = probe_http(domain)
+    analysis = analyze_http(probe_res)
+    
+    code = probe_res.get("status_code", 0)
+    metrics = probe_res.get("timings", {})
+    
+    if l: l.log_file(f"Probe HTTP: {probe_res}")
+
+    if analysis["status"] == Severity.PASS:
+        print_success(f"Response: {Colors.WHITE}HTTP {code}{Colors.ENDC}")
+    elif analysis["status"] == Severity.INFO: # WAF or Rate Limit
+        print_warning(f"{analysis['human_reason']} (HTTP {code})")
+    elif analysis["status"] == Severity.WARNING:
+        print_warning(f"{analysis['human_reason']}")
+    elif analysis["status"] in [Severity.ERROR, Severity.CRITICAL]:
+        print_fail(f"{analysis['human_reason']}")
+
+    if metrics:
+        ttfb_ms = int(metrics.get('ttfb', 0) * 1000)
+        conn_ms = int(metrics.get('connect', 0) * 1000)
+        print_info(f"Latency: Connect={conn_ms}ms, TTFB={ttfb_ms}ms")
+    
+    headers = probe_res.get("headers", {})
+    cache_status = headers.get('cf-cache-status', 'MISSING')
+    server = headers.get('server', '').lower()
+    if 'cloudflare' in server:
+        if cache_status in ['HIT', 'DYNAMIC', 'BYPASS', 'EXPIRED', 'MISS']:
+            print_info(f"Cache Status: {Colors.WHITE}{cache_status}{Colors.ENDC}")
+        elif cache_status == 'MISSING':
+            print_warning("Cloudflare active but 'cf-cache-status' header missing.")
+    
+    # Legacy Mapping
+    # HTTP_PASS -> SUCCESS
+    # HTTP_CLIENT_ERROR -> CLIENT_ERROR
+    # HTTP_SERVER_ERROR -> SERVER_ERROR
+    # HTTP_TIMEOUT, HTTP_CONNECT_FAIL -> TIMEOUT
+    # HTTP_WAF_BLOCK -> CLIENT_ERROR (Was INFO/SUCCESS, but it is a block)
+    # HTTP_RATE_LIMIT -> CLIENT_ERROR
+    
+    c = analysis["classification"]
+    res_str = "FAIL"
+    if c == "HTTP_PASS": res_str = "SUCCESS"
+    elif c in ["HTTP_CLIENT_ERROR", "HTTP_WAF_BLOCK", "HTTP_RATE_LIMIT"]: res_str = "CLIENT_ERROR"
+    elif c == "HTTP_SERVER_ERROR": res_str = "SERVER_ERROR"
+    elif c in ["HTTP_TIMEOUT", "HTTP_CONNECT_FAIL"]: res_str = "TIMEOUT"
+    elif c == "HTTP_REDIRECT": res_str = "SUCCESS" # Redirect chains are usually traversable, just a warning
+    
+    if l: l.add_html_step("HTTP", res_str, analysis["human_reason"])
+    
+    return res_str, code, probe_res.get("is_waf_challenge", False), metrics
+
+def step_ssl(domain: str) -> bool:
+    print_subheader("9. SSL/TLS Check")
+    l = get_logger()
+    
+    from .utils import get_context
+    ctx = get_context()
+    timeout = int(ctx.get('timeout', 5))
+    keylog = ctx.get('keylog_file')
+    
+    probe_res = probe_tls(domain, timeout=timeout, keylog_file=keylog)
+    analysis = analyze_tls(probe_res)
+    
+    if l: l.log_file(f"Probe TLS: {probe_res}")
+    
+    if analysis["status"] == Severity.PASS:
+        expiry = probe_res.get("cert_expiry", "Unknown")
+        print_success(f"Expiry: {expiry}")
+        if l: l.add_html_step("SSL", "PASS", f"Expiry: {expiry}")
+        return True
+    else:
+        print_fail(f"SSL Failed: {analysis['human_reason']}")
+        if l: l.add_html_step("SSL", "FAIL", analysis['human_reason'])
+        return False
+
+def step_mtu(domain: str) -> bool:
+    print_subheader("11. MTU Check")
+    l = get_logger()
+    
+    probe_res = probe_mtu(domain)
+    analysis = analyze_mtu(probe_res)
+    
+    mtu = probe_res.get("path_mtu", 0)
+    
+    if analysis["status"] == Severity.PASS:
+        print_success(f"Estimated Max MTU: {mtu}")
+        if l: l.add_html_step("MTU", "PASS", f"MTU: {mtu}")
+        return True
+    elif analysis["status"] in [Severity.WARNING, Severity.CRITICAL]:
+        print_warning(f"{analysis['human_reason']} (MTU {mtu})")
+        if l: l.add_html_step("MTU", "WARN", analysis["human_reason"])
+        return False
+    else:
+        print_warning("MTU Check failed or blocked.")
+        return False
+
+def step_origin(domain: str, ip: str) -> Tuple[bool, str]:
+    print_subheader(f"15. Direct Origin Check ({ip})")
+    l = get_logger()
+    
+    origin_res = probe_origin(domain, ip)
+    analysis = analyze_origin_reachability(origin_res.get("edge_probe", {}), origin_res.get("origin_probe", {}))
+    
+    if l: 
+        l.log_file(f"Probe Origin: {origin_res}")
+        l.log_file(f"Analysis: {analysis}")
+
+    if analysis["status"] == Severity.PASS:
+        print_success("Origin Reachable via Direct Connection.")
+        if l: l.add_html_step("Origin", "PASS", "Origin Reachable")
+        return True, "SUCCESS"
+        
+    elif analysis["classification"] == "ORIGIN_FIREWALL_BLOCK":
+        print_warning(f"{analysis['human_reason']}")
+        if l: l.add_html_step("Origin", "WARN", analysis["human_reason"])
+        return True, "SUCCESS"
+        
+    elif analysis["classification"] == "ORIGIN_522":
+        print_fail(f"{analysis['human_reason']}")
+        if l: l.add_html_step("Origin", "FAIL", analysis["human_reason"])
+        return False, "TIMEOUT"
+        
+    else:
+        print_fail(f"{analysis['human_reason']}")
+        if l: l.add_html_step("Origin", "FAIL", analysis["human_reason"])
+        return False, "FAIL"
+
+# --- Unmodified Legacy Steps ---
 def step_doh(domain: str) -> bool:
     print_subheader("1.5 DNS-over-HTTPS (DoH) Check")
     l = get_logger()
@@ -151,7 +270,7 @@ def step_doh(domain: str) -> bool:
     if l: l.add_html_step("DoH", "FAIL", "Failed")
     return False
 
-def step_blacklist(domain: str, ip: str) -> None:
+def step_blacklist(domain: str, ip: str) -> None: 
     print_subheader("2. Blacklist/Reputation Check (DNSBL)")
     if not ip: return
     l = get_logger()
@@ -173,7 +292,7 @@ def step_blacklist(domain: str, ip: str) -> None:
     except Exception as e:
         print_warning(f"Blacklist check failed: {e}")
 
-def step_dns_trace(domain: str) -> None:
+def step_dns_trace(domain: str) -> None: 
     print_subheader("3. Recursive DNS Trace")
     if not shutil.which("dig"): return
     
@@ -222,7 +341,7 @@ def step_dnssec(domain: str) -> Optional[str]:
     if l: l.add_html_step("DNSSEC", "PASS" if status=="SIGNED" else "FAIL", f"Status: {status}")
     return status
 
-def step_domain_status(domain: str) -> None:
+def step_domain_status(domain: str) -> None: 
     print_subheader("6. Domain Registration Status (RDAP)")
     flags = get_curl_flags()
     code, output = run_command(f"curl{flags} -s --connect-timeout 5 https://rdap.org/domain/{domain}", show_output=False)
@@ -243,83 +362,9 @@ def step_domain_status(domain: str) -> None:
     l = get_logger()
     if l: l.add_html_step("RDAP", "INFO", detail)
 
-def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
-    print_subheader("7. HTTP/HTTPS Availability")
-    fmt = "code=%{http_code};;connect=%{time_connect};;start=%{time_starttransfer};;total=%{time_total}"
-    flags = get_curl_flags()
-    cmd = f"curl{flags} -I -w \"{fmt}\" --connect-timeout 10 https://{domain}"
-    print_cmd(cmd)
-    
-    code, output = run_command(cmd, log_output_to_file=True)
-    
-    status = 0
-    waf = False
-    metrics: Dict[str, float] = {}
-    
-    if code == 0:
-        lines = output.splitlines()
-        metrics_line = ""
-        for l in reversed(lines):
-            if l.startswith("code="):
-                metrics_line = l
-                break
-        
-        if metrics_line:
-            try:
-                parts = dict(p.split('=') for p in metrics_line.split(';;'))
-                status = int(parts.get('code', 0)) # type: ignore
-                metrics = {k: float(v) for k, v in parts.items() if k != 'code'}
-            except: pass
-    
-    l = get_logger()
-    status_str = "PASS" if 200<=status<400 else "FAIL"
-    if l: l.add_html_step("HTTP", status_str, f"Status: {status}\nMetrics: {metrics}")
-    
-    if 200 <= status < 400:
-        print_success(f"Response: {Colors.WHITE}HTTP {status}{Colors.ENDC}")
-    elif status >= 400:
-        if waf:
-             print_warning(f"WAF/Challenge Blocked (HTTP {status})")
-        elif status < 500:
-             print_warning(f"Client Error: HTTP {status}")
-        else:
-             print_fail(f"Server Error: HTTP {status}")
 
-    if metrics:
-        ttfb_ms = int(metrics.get('ttfb', 0) * 1000)
-        conn_ms = int(metrics.get('connect', 0) * 1000)
-        print_info(f"Latency: Connect={conn_ms}ms, TTFB={ttfb_ms}ms")
 
-    step_cache_headers(output)
-    
-    res_str = "FAIL"
-    if 200 <= status < 400: res_str = "SUCCESS"
-    elif 400 <= status < 500: res_str = "CLIENT_ERROR"
-    elif 500 <= status < 600: res_str = "SERVER_ERROR"
-    elif code == 28: res_str = "TIMEOUT" # Curl timeout
-    
-    return res_str, status, False, metrics
-
-def step_cache_headers(http_output: str) -> None:
-    headers = {}
-    for line in http_output.splitlines():
-        if ':' in line:
-            k, v = line.split(':', 1)
-            headers[k.lower().strip()] = v.strip()
-    
-    cache_status = headers.get('cf-cache-status', 'MISSING')
-    server = headers.get('server', '').lower()
-    
-    l = get_logger()
-    if 'cloudflare' in server:
-        if cache_status in ['HIT', 'DYNAMIC', 'BYPASS', 'EXPIRED', 'MISS']:
-            print_info(f"Cache Status: {Colors.WHITE}{cache_status}{Colors.ENDC}")
-        elif cache_status == 'MISSING':
-            print_warning("Cloudflare active but 'cf-cache-status' header missing.")
-        
-        if l: l.add_html_step("Cache Analysis", "INFO", f"Status: {cache_status}")
-
-def step_security_headers(domain: str) -> None:
+def step_security_headers(domain: str) -> None: 
     print_subheader("7.5. Security Header Audit")
     flags = get_curl_flags()
     cmd = f"curl{flags} -I --connect-timeout 5 https://{domain}"
@@ -380,29 +425,7 @@ def step_http3_udp(domain: str) -> bool:
         if l: l.add_html_step("HTTP/3", "FAIL", str(e))
         return False
 
-def step_ssl(domain: str) -> bool:
-    print_subheader("9. SSL/TLS Check")
-    context = ssl.create_default_context()
-    
-    from .utils import get_context
-    ctx = get_context()
-    timeout = int(ctx.get('timeout', 5))
-    if ctx.get('keylog_file'):
-        context.keylog_filename = ctx.get('keylog_file') # type: ignore
-        
-    l = get_logger()
-    try:
-        with socket.create_connection((domain, 443), timeout=timeout) as sock:
-            with context.wrap_socket(sock, server_hostname=domain) as ssock:
-                print_success(f"Expiry: {ssock.getpeercert().get('notAfter')}") # type: ignore
-                if l: l.add_html_step("SSL", "PASS", f"Expiry: {ssock.getpeercert().get('notAfter')}") # type: ignore
-                return True
-    except Exception as e:
-        print_fail(f"SSL Failed: {e}")
-        if l: l.add_html_step("SSL", "FAIL", str(e))
-        return False
-
-def step_ocsp(domain: str) -> None:
+def step_ocsp(domain: str) -> None: 
     print_subheader("9.5 OCSP Stapling Check")
     if not shutil.which("openssl"): return
     cmd = f"openssl s_client -servername {domain} -connect {domain}:443 -status"
@@ -431,52 +454,7 @@ def step_tcp(domain: str) -> bool:
         if l: l.add_html_step("TCP", "FAIL", str(e))
         return False
 
-def step_mtu(domain: str) -> bool:
-    # Feature: Real MTU Discovery
-    print_subheader("11. MTU Check")
-    l = get_logger()
-    
-    # Determine ping command style
-    is_windows = os.name == 'nt'
-    
-    # Sizes to test (Packet size, not payload. Payload = Size - 28)
-    # We set payload size.
-    # Max standard MTU 1500. Headers 28. Max payload 1472.
-    test_sizes = [1472, 1464, 1452, 1432, 1372, 1272] 
-    # Corresponds to MTU: 1500, 1492 (PPPoE), 1480, 1460, 1400, 1300
-    
-    found_mtu = 0
-    
-    for size in test_sizes:
-        # Construct command
-        if is_windows:
-            cmd = f"ping -n 1 -f -l {size} {domain}"
-        else:
-            # Linux/Mac. Mac uses -D for DF? Linux uses -M do.
-            if sys.platform == "darwin":
-                cmd = f"ping -c 1 -D -s {size} {domain}"
-            else:
-                cmd = f"ping -c 1 -M do -s {size} {domain}"
-        
-        c, out = run_command(cmd, show_output=False, log_output_to_file=False)
-        
-        if c == 0:
-            found_mtu = size + 28
-            print_success(f"Packet size {size} (MTU {found_mtu}): OK")
-            break # Found highest working
-        else:
-            print_info(f"Packet size {size} (MTU {size+28}): Fragmented/Dropped")
-    
-    if found_mtu:
-        print_success(f"Estimated Max MTU: {found_mtu}")
-        if l: l.add_html_step("MTU", "PASS", f"MTU: {found_mtu}")
-        return True
-    else:
-        print_warning("MTU Check failed or blocked.")
-        if l: l.add_html_step("MTU", "WARN", "Failed")
-        return False
-
-def step_traceroute(domain: str) -> None:
+def step_traceroute(domain: str) -> None: 
     print_subheader("12. Traceroute")
     cmd = f"tracert -h 15 {domain}" if os.name == 'nt' else f"traceroute -m 15 -w 2 {domain}"
     
@@ -508,15 +486,11 @@ def step_cf_forced(domain: str) -> bool:
     print_subheader("14. CF Forced")
     return True
 
-def step_origin(domain: str, ip: str) -> Tuple[bool, str]:
-    print_subheader("15. Direct Origin")
-    return True, "SUCCESS"
-
 def step_alt_ports(domain: str) -> Tuple[bool, List[int]]:
     print_subheader("16. Alt Ports")
     return False, []
 
-def step_redirects(domain: str) -> None:
+def step_redirects(domain: str) -> None: 
     print_subheader("17. Redirect Chain Analysis")
     current_url = f"http://{domain}"
     hops = []
@@ -536,7 +510,7 @@ def step_redirects(domain: str) -> None:
     l = get_logger()
     if l: l.add_html_step("Redirects", "INFO", "\n".join(hops))
 
-def step_waf_evasion(domain: str) -> None:
+def step_waf_evasion(domain: str) -> None: 
     print_subheader("18. WAF / User-Agent Test")
     blocked = []
     allowed = []
@@ -558,7 +532,7 @@ def step_waf_evasion(domain: str) -> None:
         l.log(f"{Colors.WARNING}WAF Detected: Blocks {', '.join(blocked)}{Colors.ENDC}", force=True)
     if l: l.add_html_step("WAF Evasion", "INFO", f"Blocked: {blocked}\nAllowed: {allowed}")
 
-def step_speed(domain: str) -> None:
+def step_speed(domain: str) -> None: 
     print_subheader("19. Throughput Speed Test")
     flags = get_curl_flags()
     cmd = f'curl{flags} -s -w "%{{speed_download}}" -o /dev/null https://{domain}/'
@@ -581,7 +555,7 @@ def step_speed(domain: str) -> None:
     else:
         print_warning("Speed test failed to collect data.")
 
-def step_dns_benchmark(domain: str) -> None:
+def step_dns_benchmark(domain: str) -> None: 
     print_subheader("20. DNS Resolver Benchmark")
     results = []
     if not shutil.which("dig"): return
@@ -606,7 +580,7 @@ def step_dns_benchmark(domain: str) -> None:
         
     if l: l.add_html_step("DNS Benchmark", "INFO", details)
 
-def step_graph(domain: str) -> None:
+def step_graph(domain: str) -> None: 
     print_subheader("21. Topology Graph (DOT)")
     hops = get_traceroute_hops(domain)
     if not hops:
@@ -642,7 +616,7 @@ def ping_host(host: str) -> float:
         if m: return float(m.group(1))
     return -1.0
 
-def step_websocket(domain: str, path: str = "/") -> None: # Feature: WebSocket Handshake
+def step_websocket(domain: str, path: str = "/") -> None: 
     print_subheader("22. WebSocket Handshake Check")
     from .utils import get_context
     ctx = get_context()
@@ -651,7 +625,6 @@ def step_websocket(domain: str, path: str = "/") -> None: # Feature: WebSocket H
     host = domain
     port = 443
     
-    # Simple handshake
     request = (
         f"GET {path} HTTP/1.1\r\n"
         f"Host: {domain}\r\n"
@@ -705,7 +678,7 @@ def get_traceroute_hops(domain: str) -> List[str]:
                 seen.add(ip)
     return hops
 
-def run_mtr(domain: str) -> None:
+def run_mtr(domain: str) -> None: 
     print(f"Tracing route to {domain}...")
     hops = get_traceroute_hops(domain)
     if not hops:
@@ -716,7 +689,6 @@ def run_mtr(domain: str) -> None:
     
     try:
         while True:
-            # Clear screen
             os.system('cls' if os.name == 'nt' else 'clear')
             print(f"{Colors.BOLD}--- MTR Mode: {domain} (Ctrl+C to quit) ---{Colors.ENDC}")
             print(f"{ 'HOST':<30} | {'LOSS%':<6} | {'AVG':<6} | {'LAST':<6}")

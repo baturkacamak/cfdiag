@@ -137,21 +137,49 @@ class TestNetwork(unittest.TestCase):
     def tearDown(self):
         self.log_patcher.stop()
 
-    @patch('cfdiag.network.socket.getaddrinfo')
-    def test_step_dns_ipv4(self, mock_gai):
-        mock_gai.return_value = [(socket.AF_INET, 0, 0, '', ('1.1.1.1', 443))]
-        with patch('cfdiag.network.run_command', return_value=(0, "")):
-            ok, v4, v6 = cfdiag.network.step_dns("example.com")
+    @patch('cfdiag.network.analyze_dns')
+    @patch('cfdiag.network.probe_dns')
+    def test_step_dns_ipv4(self, mock_probe, mock_analyze):
+        mock_probe.return_value = {
+            "domain": "example.com", 
+            "records": {"A": ["1.1.1.1"], "AAAA": [], "CNAME": [], "NS": []}, 
+            "resolvers_used": [], 
+            "dnssec_valid": None,
+            "error": None, 
+            "raw_output": ""
+        }
+        mock_analyze.return_value = {
+            "status": cfdiag.types.Severity.PASS,
+            "classification": "DNS_PASS",
+            "human_reason": "Resolved",
+            "meta": {},
+            "recommendations": []
+        }
+        ok, v4, v6 = cfdiag.network.step_dns("example.com")
         self.assertTrue(ok)
         self.assertEqual(v4, ['1.1.1.1'])
 
-    @patch('cfdiag.network.run_command')
-    def test_step_http_success(self, mock_run):
-        output = """HTTP/2 200
-server: cloudflare
-cf-cache-status: HIT
-code=200;;connect=0.1;;start=0.2;;total=0.3"""
-        mock_run.return_value = (0, output)
+    @patch('cfdiag.network.analyze_http')
+    @patch('cfdiag.network.probe_http')
+    def test_step_http_success(self, mock_probe, mock_analyze):
+        mock_probe.return_value = {
+            "url": "https://example.com",
+            "status_code": 200,
+            "headers": {},
+            "redirect_chain": [],
+            "timings": {"connect": 0.1, "ttfb": 0.2, "total": 0.3, "namelookup": 0.05},
+            "body_sample": "",
+            "is_waf_challenge": False,
+            "http_version": "1.1",
+            "error": None
+        }
+        mock_analyze.return_value = {
+            "status": cfdiag.types.Severity.PASS,
+            "classification": "HTTP_PASS",
+            "human_reason": "OK",
+            "meta": {},
+            "recommendations": []
+        }
         res, code, waf, metrics = cfdiag.network.step_http("example.com")
         self.assertEqual(res, "SUCCESS")
         self.assertEqual(code, 200)
@@ -183,26 +211,56 @@ code=200;;connect=0.1;;start=0.2;;total=0.3"""
         cfdiag.network.step_dns_benchmark("example.com")
         self.mock_logger.add_html_step.assert_called()
 
-    @patch('cfdiag.network.socket.create_connection')
-    def test_step_ssl_keylog(self, mock_conn):
+    @patch('cfdiag.network.analyze_tls')
+    @patch('cfdiag.network.probe_tls')
+    def test_step_ssl_keylog(self, mock_probe, mock_analyze):
         cfdiag.utils.set_context({'keylog_file': 'test.log'})
-        with patch('ssl.create_default_context') as mock_ctx_ctor:
-            mock_ctx = MagicMock()
-            mock_ctx_ctor.return_value = mock_ctx
-            cfdiag.network.step_ssl("example.com")
-            self.assertEqual(mock_ctx.keylog_filename, 'test.log')
+        mock_probe.return_value = {
+            "handshake_success": True,
+            "cert_valid": True,
+            "protocol_version": "TLSv1.3",
+            "cert_expiry": "2025-01-01",
+            "cert_start": "2024-01-01",
+            "cert_issuer": "Let's Encrypt",
+            "verification_errors": [],
+            "ocsp_stapled": False,
+            "error": None,
+            "cipher": "AES",
+            "cert_subject": "example.com"
+        }
+        mock_analyze.return_value = {
+            "status": cfdiag.types.Severity.PASS,
+            "classification": "SSL_PASS",
+            "human_reason": "Secure",
+            "meta": {},
+            "recommendations": []
+        }
+        
+        cfdiag.network.step_ssl("example.com")
+        mock_probe.assert_called_with("example.com", timeout=5, keylog_file="test.log")
 
-    @patch('cfdiag.network.run_command')
-    def test_step_mtu(self, mock_run):
-        def side_effect(cmd, **kwargs):
-            if "1472" in cmd: return (1, "Frag needed")
-            if "1464" in cmd: return (0, "Reply")
-            return (1, "Error")
-        mock_run.side_effect = side_effect
+    @patch('cfdiag.network.analyze_mtu')
+    @patch('cfdiag.network.probe_mtu')
+    def test_step_mtu(self, mock_probe, mock_analyze):
+        mock_probe.return_value = {
+            "path_mtu": 1500,
+            "fragmentation_point": 0,
+            "packets_sent": 5,
+            "packets_lost": 0,
+            "error": None
+        }
+        mock_analyze.return_value = {
+            "status": cfdiag.types.Severity.PASS,
+            "classification": "MTU_PASS",
+            "human_reason": "Standard MTU",
+            "meta": {"mtu": 1500, "lost": 0},
+            "recommendations": []
+        }
         cfdiag.network.step_mtu("example.com")
         self.mock_logger.add_html_step.assert_called()
         args = self.mock_logger.add_html_step.call_args[0]
-        self.assertIn("1492", args[2])
+        # In step_mtu we print/log the MTU
+        self.assertIn("1500", args[2])
 
     @patch('cfdiag.network.socket.create_connection')
     @patch('cfdiag.network.ssl.create_default_context')
