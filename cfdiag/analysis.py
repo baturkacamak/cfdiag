@@ -1,8 +1,8 @@
 from typing import List, Optional, Any
 from datetime import datetime
 from .types import (
-    ProbeDNSResult, ProbeHTTPResult, ProbeTLSResult, ProbeMTUResult, ProbeOriginResult,
-    AnalysisResult, Severity
+    ProbeDNSResult, ProbeHTTPResult, ProbeTLSResult, ProbeMTUResult, 
+    ProbeOriginResult, ProbeASNResult, AnalysisResult, Severity
 )
 
 def _res(
@@ -32,12 +32,12 @@ def analyze_dns(probe: ProbeDNSResult) -> AnalysisResult:
                    f"DNS Resolution failed: {probe['error'] or 'No records'}", meta,
                    ["Check domain registration", "Check authoritative nameservers"])
 
+    if probe["dnssec_valid"] is False:
+        return _res(Severity.ERROR, "DNS_DNSSEC_FAIL", "DNSSEC Validation Failed.", meta,
+                   ["Check DS record configuration", "Check DNSKEY signing"])
+
     has_a = len(probe["records"]["A"]) > 0
     has_aaaa = len(probe["records"]["AAAA"]) > 0
-    
-    # If resolver consistency check was in probe, we would use DNS_INCONSISTENT here.
-    # Current probe doesn't explicitly check multiple resolvers against each other in detail,
-    # but if records exist we pass.
     
     if has_a and has_aaaa:
         return _res(Severity.PASS, "DNS_PASS", "Resolved both IPv4 and IPv6.", meta)
@@ -71,12 +71,6 @@ def analyze_http(probe: ProbeHTTPResult) -> AnalysisResult:
         return _res(Severity.CRITICAL, "HTTP_CONNECT_FAIL", "Connection returned status 0.", meta)
 
     # 2. Redirects
-    # Spec: >5 hops -> HTTP_REDIRECT (WARNING)
-    # Actually, redirect chain tracking in probe_http is currently limited by curl logic unless we parse headers extensively.
-    # But if code is 3xx, it means we stopped at a redirect (or loop limit).
-    # Since we use curl -L, we follow redirects. If we ended up at 3xx, loop detected or max reached.
-    # If probe['redirect_chain'] is populated (stubbed currently), we'd check length.
-    # We can check if code is 3xx after curl -L, it usually means limit reached.
     if code in [301, 302, 303, 307, 308]:
          return _res(Severity.WARNING, "HTTP_REDIRECT", "Redirect limit reached or loop detected.", meta,
                     ["Check for redirect loops"])
@@ -86,11 +80,9 @@ def analyze_http(probe: ProbeHTTPResult) -> AnalysisResult:
         return _res(Severity.INFO, "HTTP_RATE_LIMIT", "Rate Limited (HTTP 429).", meta)
 
     # 4. WAF - But prioritize 200 OK
-    # If code is 200, it is PASS, even if WAF headers exist (passive mode or passed challenge)
     if 200 <= code < 400:
         return _res(Severity.PASS, "HTTP_PASS", f"HTTP {code} OK.", meta)
 
-    # If not 200, check WAF
     if probe["is_waf_challenge"]:
         return _res(Severity.INFO, "HTTP_WAF_BLOCK", "Request challenged/blocked by WAF.", meta,
                    ["Check WAF rules if this is unexpected", "Allowlist test IP"])
@@ -119,20 +111,16 @@ def analyze_tls(probe: ProbeTLSResult) -> AnalysisResult:
                    f"TLS Handshake Failed: {probe['error']}", meta,
                    ["Check SSL configuration", "Check port 443 connectivity"])
                    
-    # Check Expiry explicitly for TLS_EXPIRED
-    # probe['cert_expiry'] is string e.g. "May 20 12:00:00 2025 GMT" (from Python ssl lib default)
-    # We need parsing to compare dates. For robustness without strict date parsing dep here,
-    # we rely on 'cert_valid' which Python SSL lib sets to False if expired.
-    # But spec wants TLS_EXPIRED vs TLS_WARN_CERT_INVALID.
-    # We can check verification errors string for "expired".
-    
     if not probe["cert_valid"]:
         errors = "; ".join(probe["verification_errors"]).lower()
         if "expired" in errors or "not yet valid" in errors:
              return _res(Severity.ERROR, "TLS_EXPIRED", 
                    f"Certificate Expired/Not Valid: {errors}", meta,
                    ["Renew certificate"])
-        
+        if "mismatch" in errors or "hostname" in errors:
+             return _res(Severity.ERROR, "TLS_WARN_HOST_MISMATCH",
+                   f"Hostname Mismatch: {errors}", meta,
+                   ["Ensure certificate SANs match the domain"])
         return _res(Severity.ERROR, "TLS_WARN_CERT_INVALID", 
                    f"Certificate Invalid: {errors}", meta,
                    ["Renew certificate", "Fix chain of trust"])
@@ -149,8 +137,6 @@ def analyze_mtu(probe: ProbeMTUResult) -> AnalysisResult:
     meta = {"mtu": mtu, "lost": probe["packets_lost"]}
     
     if mtu == 0:
-        # If all lost, we treat as Warning/Fail depending on context, spec says MTU_PASS if >= 1500
-        # If 0, it means blocked.
         return _res(Severity.WARNING, "MTU_WARNING", "Could not determine MTU (ICMP blocked?).", meta)
         
     if mtu < 1280:
@@ -172,7 +158,6 @@ def analyze_origin_reachability(edge: ProbeHTTPResult, origin: ProbeHTTPResult) 
     origin_ok = 200 <= origin["status_code"] < 400
     edge_cf_error = edge["status_code"] in [502, 504, 521, 522, 523, 524]
     
-    # 1. Origin completely down/unreachable
     if origin["error"] or origin["status_code"] == 0:
         err = origin["error"] or ""
         if "Timeout" in err:
@@ -180,15 +165,23 @@ def analyze_origin_reachability(edge: ProbeHTTPResult, origin: ProbeHTTPResult) 
                         ["Check Origin Firewall", "Verify Origin IP is correct"])
         return _res(Severity.CRITICAL, "ORIGIN_UNREACHABLE", f"Origin Unreachable: {err}", meta)
 
-    # 2. Origin OK, but Edge 522/etc -> Firewall or config issue
     if edge_cf_error and origin_ok:
         return _res(Severity.WARNING, "ORIGIN_FIREWALL_BLOCK", 
                    "Origin is UP, but Cloudflare cannot reach it (Firewall likely).", meta,
                    ["Whitelist Cloudflare IPs"])
                    
-    # 3. Both OK
     if origin_ok and 200 <= edge["status_code"] < 400:
          return _res(Severity.PASS, "ORIGIN_REACHABLE", "Origin and Edge both reachable.", meta)
 
-    # 4. Fallback (e.g. Origin 500, Edge 500 -> both failing)
     return _res(Severity.INFO, "ORIGIN_REACHABLE", "Status match (non-success).", meta)
+
+def analyze_asn(probe: ProbeASNResult) -> AnalysisResult:
+    meta = {"asn": probe["asn"], "country": probe["country"]}
+    
+    if probe["error"]:
+        return _res(Severity.WARNING, "ASN_LOOKUP_FAIL", f"ASN Lookup failed: {probe['error']}", meta)
+        
+    if probe["asn"]:
+        return _res(Severity.PASS, "ASN_FOUND", f"AS{probe['asn']} ({probe['country']})", meta)
+        
+    return _res(Severity.INFO, "ASN_NOT_FOUND", "No ASN info found.", meta)

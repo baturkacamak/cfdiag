@@ -16,9 +16,8 @@ from .reporting import (
     print_fail, print_info, print_warning, print_cmd
 )
 
-# New Architecture Imports
-from .probes import probe_dns, probe_http, probe_tls, probe_mtu, probe_origin
-from .analysis import analyze_dns, analyze_http, analyze_tls, analyze_mtu, analyze_origin_reachability
+from .probes import probe_dns, probe_http, probe_tls, probe_mtu, probe_origin, probe_asn
+from .analysis import analyze_dns, analyze_http, analyze_tls, analyze_mtu, analyze_origin_reachability, analyze_asn
 from .types import Severity
 
 def check_dependencies() -> None: 
@@ -75,8 +74,35 @@ def check_internet_connection() -> bool:
         except: continue
     return False
 
-def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
-    print_subheader("1. DNS Resolution & ASN/ISP Check")
+def step_asn(domain: str) -> None: 
+    print_subheader("17. ASN/ISP Check")
+    l = get_logger()
+    
+    # Independent IP resolution
+    ip = None
+    try:
+        ip = socket.gethostbyname(domain)
+    except:
+        pass
+
+    if not ip or ip.startswith(("192.168.", "10.", "127.", "::1")):
+        print_info("Skipping ASN check (Private or Unresolved IP)")
+        return
+
+    probe_res = probe_asn(ip)
+    analysis = analyze_asn(probe_res)
+    
+    if analysis["status"] == Severity.PASS:
+        print_success(f"ASN Info: {Colors.WHITE}{analysis['human_reason']}{Colors.ENDC}")
+        if l: l.log_file(f"ASN: {analysis['human_reason']}")
+    elif analysis["status"] == Severity.WARNING:
+        if l: l.log_file(f"ASN Check: {analysis['human_reason']}")
+    
+    status_str = "PASS" if analysis["status"] == Severity.PASS else "WARN"
+    if l: l.add_html_step("ASN", status_str, analysis["human_reason"])
+
+def step_dns(domain: str) -> None: 
+    print_subheader("1. DNS Resolution")
     l = get_logger()
     
     probe_res = probe_dns(domain)
@@ -93,29 +119,14 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
         
         if ipv6: print_success(f"IPv6 Resolved: {Colors.WHITE}{', '.join(ipv6)}{Colors.ENDC}")
         else: print_info("No IPv6 records found.")
-        
-        target_ip = ipv4[0] if ipv4 else (ipv6[0] if ipv6 else None)
-        if target_ip and not target_ip.startswith(("192.168.", "10.", "127.", "::1")):
-            if '.' in target_ip:
-                rev_ip = '.'.join(reversed(target_ip.split('.')))
-                cmd = f"dig +short -t TXT {rev_ip}.origin.asn.cymru.com"
-                c, out = run_command(cmd, show_output=False, log_output_to_file=True)
-                if c == 0 and out.strip():
-                    parts = out.replace('"', '').split('|')
-                    if len(parts) >= 3:
-                        asn = parts[0].strip()
-                        country = parts[2].strip()
-                        print_success(f"ASN Info: {Colors.WHITE}AS{asn} ({country}){Colors.ENDC}")
-                        if l: l.log_file(f"ASN: AS{asn}, {country}")
+
     else:
         print_fail(f"{analysis['classification']}: {analysis['human_reason']}")
     
     status_str = "PASS" if analysis["status"] in [Severity.PASS, Severity.INFO] else "FAIL"
     if l: l.add_html_step("DNS", status_str, analysis["human_reason"])
-    
-    return analysis["status"] in [Severity.PASS, Severity.INFO], ipv4, ipv6
 
-def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
+def step_http(domain: str) -> None: 
     print_subheader("7. HTTP/HTTPS Availability")
     l = get_logger()
     
@@ -129,7 +140,7 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
 
     if analysis["status"] == Severity.PASS:
         print_success(f"Response: {Colors.WHITE}HTTP {code}{Colors.ENDC}")
-    elif analysis["status"] == Severity.INFO: # WAF or Rate Limit
+    elif analysis["status"] == Severity.INFO:
         print_warning(f"{analysis['human_reason']} (HTTP {code})")
     elif analysis["status"] == Severity.WARNING:
         print_warning(f"{analysis['human_reason']}")
@@ -150,27 +161,15 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
         elif cache_status == 'MISSING':
             print_warning("Cloudflare active but 'cf-cache-status' header missing.")
     
-    # Legacy Mapping
-    # HTTP_PASS -> SUCCESS
-    # HTTP_CLIENT_ERROR -> CLIENT_ERROR
-    # HTTP_SERVER_ERROR -> SERVER_ERROR
-    # HTTP_TIMEOUT, HTTP_CONNECT_FAIL -> TIMEOUT
-    # HTTP_WAF_BLOCK -> CLIENT_ERROR (Was INFO/SUCCESS, but it is a block)
-    # HTTP_RATE_LIMIT -> CLIENT_ERROR
-    
-    c = analysis["classification"]
+    # Standardize Status Strings for HTML
     res_str = "FAIL"
-    if c == "HTTP_PASS": res_str = "SUCCESS"
-    elif c in ["HTTP_CLIENT_ERROR", "HTTP_WAF_BLOCK", "HTTP_RATE_LIMIT"]: res_str = "CLIENT_ERROR"
-    elif c == "HTTP_SERVER_ERROR": res_str = "SERVER_ERROR"
-    elif c in ["HTTP_TIMEOUT", "HTTP_CONNECT_FAIL"]: res_str = "TIMEOUT"
-    elif c == "HTTP_REDIRECT": res_str = "SUCCESS" # Redirect chains are usually traversable, just a warning
+    if analysis["status"] == Severity.PASS: res_str = "PASS"
+    elif analysis["status"] == Severity.INFO: res_str = "INFO"
+    elif analysis["status"] == Severity.WARNING: res_str = "WARN"
     
     if l: l.add_html_step("HTTP", res_str, analysis["human_reason"])
-    
-    return res_str, code, probe_res.get("is_waf_challenge", False), metrics
 
-def step_ssl(domain: str) -> bool:
+def step_ssl(domain: str) -> None: 
     print_subheader("9. SSL/TLS Check")
     l = get_logger()
     
@@ -188,34 +187,27 @@ def step_ssl(domain: str) -> bool:
         expiry = probe_res.get("cert_expiry", "Unknown")
         print_success(f"Expiry: {expiry}")
         if l: l.add_html_step("SSL", "PASS", f"Expiry: {expiry}")
-        return True
     else:
         print_fail(f"SSL Failed: {analysis['human_reason']}")
         if l: l.add_html_step("SSL", "FAIL", analysis['human_reason'])
-        return False
 
-def step_mtu(domain: str) -> bool:
+def step_mtu(domain: str) -> None:
     print_subheader("11. MTU Check")
     l = get_logger()
     
     probe_res = probe_mtu(domain)
     analysis = analyze_mtu(probe_res)
     
-    mtu = probe_res.get("path_mtu", 0)
-    
     if analysis["status"] == Severity.PASS:
-        print_success(f"Estimated Max MTU: {mtu}")
-        if l: l.add_html_step("MTU", "PASS", f"MTU: {mtu}")
-        return True
+        print_success(f"{analysis['human_reason']}")
+        if l: l.add_html_step("MTU", "PASS", analysis['human_reason'])
     elif analysis["status"] in [Severity.WARNING, Severity.CRITICAL]:
-        print_warning(f"{analysis['human_reason']} (MTU {mtu})")
+        print_warning(f"{analysis['human_reason']}")
         if l: l.add_html_step("MTU", "WARN", analysis["human_reason"])
-        return False
     else:
         print_warning("MTU Check failed or blocked.")
-        return False
 
-def step_origin(domain: str, ip: str) -> Tuple[bool, str]:
+def step_origin(domain: str, ip: str) -> None:
     print_subheader(f"15. Direct Origin Check ({ip})")
     l = get_logger()
     
@@ -227,388 +219,21 @@ def step_origin(domain: str, ip: str) -> Tuple[bool, str]:
         l.log_file(f"Analysis: {analysis}")
 
     if analysis["status"] == Severity.PASS:
-        print_success("Origin Reachable via Direct Connection.")
-        if l: l.add_html_step("Origin", "PASS", "Origin Reachable")
-        return True, "SUCCESS"
+        print_success(f"{analysis['human_reason']}")
+        if l: l.add_html_step("Origin", "PASS", analysis['human_reason'])
         
     elif analysis["classification"] == "ORIGIN_FIREWALL_BLOCK":
         print_warning(f"{analysis['human_reason']}")
         if l: l.add_html_step("Origin", "WARN", analysis["human_reason"])
-        return True, "SUCCESS"
         
     elif analysis["classification"] == "ORIGIN_522":
         print_fail(f"{analysis['human_reason']}")
         if l: l.add_html_step("Origin", "FAIL", analysis["human_reason"])
-        return False, "TIMEOUT"
         
     else:
         print_fail(f"{analysis['human_reason']}")
         if l: l.add_html_step("Origin", "FAIL", analysis["human_reason"])
-        return False, "FAIL"
-
-# --- Unmodified Legacy Steps ---
-def step_doh(domain: str) -> bool:
-    print_subheader("1.5 DNS-over-HTTPS (DoH) Check")
-    l = get_logger()
-    url = f"https://cloudflare-dns.com/dns-query?name={domain}&type=A"
-    cmd = f'curl -s -H "Accept: application/dns-json" "{url}"'
-    c, out = run_command(cmd, show_output=False, log_output_to_file=True)
-    
-    if c == 0:
-        try:
-            data = json.loads(out)
-            if data.get('Status') == 0:
-                answers = data.get('Answer', [])
-                ips = [a['data'] for a in answers if a['type'] == 1]
-                if ips:
-                    print_success(f"DoH Resolution: {', '.join(ips)}")
-                    if l: l.add_html_step("DoH", "PASS", f"IPs: {ips}")
-                    return True
-        except: pass
-    
-    print_warning("DoH Resolution Failed.")
-    if l: l.add_html_step("DoH", "FAIL", "Failed")
-    return False
-
-def step_blacklist(domain: str, ip: str) -> None: 
-    print_subheader("2. Blacklist/Reputation Check (DNSBL)")
-    if not ip: return
-    l = get_logger()
-    try:
-        if ':' in ip: return
-        rev_ip = '.'.join(reversed(ip.split('.')))
-        listed = False
-        details = ""
-        for name, dnsbl in DNSBL_LIST:
-            query = f"{rev_ip}.{dnsbl}"
-            try:
-                socket.gethostbyname(query)
-                print_fail(f"Listed on {name}!")
-                details += f"Listed on {name}\n"
-                listed = True
-            except: 
-                details += f"Clean on {name}\n"
-        if l: l.add_html_step("Blacklist Check", "FAIL" if listed else "PASS", details)
-    except Exception as e:
-        print_warning(f"Blacklist check failed: {e}")
-
-def step_dns_trace(domain: str) -> None: 
-    print_subheader("3. Recursive DNS Trace")
-    if not shutil.which("dig"): return
-    
-    from .utils import get_context
-    ctx = get_context()
-    flags = ""
-    if ctx.get('ipv4'): flags += " -4"
-    if ctx.get('ipv6'): flags += " -6"
-    
-    c, out = run_command(f"dig +trace{flags} {domain}", timeout=15, log_output_to_file=True)
-    status = "PASS" if c==0 and "NOERROR" in out else "WARN"
-    l = get_logger()
-    if l: l.add_html_step("DNS Trace", status, out)
-
-def step_propagation(domain: str, expected_ns: str) -> str:
-    print_subheader(f"4. Global Propagation Check")
-    if not shutil.which("dig") and os.name != 'nt': return "ERROR"
-    matches = 0
-    details = ""
-    l = get_logger()
-    if l: l.log_file(f"Target Nameserver Substring: {expected_ns}")
-
-    for name, ip in PUBLIC_RESOLVERS:
-        if shutil.which("dig"): cmd = f"dig @{ip} NS {domain} +short"
-        elif os.name == 'nt': cmd = f"nslookup -type=NS {domain} {ip}"
-        else: continue
-        c, out = run_command(cmd, show_output=False)
-        found = expected_ns.lower() in out.lower()
-        if found: matches += 1
-        res_str = "MATCH" if found else "MISMATCH"
-        print_info(f"{name}: {res_str}")
-        details += f"{name}: {res_str}\n"
-    
-    status = "MATCH" if matches == len(PUBLIC_RESOLVERS) else "PARTIAL"
-    if l: l.add_html_step("Propagation", status, details)
-    return status
-
-def step_dnssec(domain: str) -> Optional[str]:
-    print_subheader("5. DNSSEC Validation")
-    if not shutil.which("dig"): return None
-    c, out = run_command(f"dig DS {domain} +short", log_output_to_file=True)
-    if not out.strip(): return "DISABLED"
-    c, out = run_command(f"dig A {domain} +dnssec +short", log_output_to_file=True)
-    status = "SIGNED" if "RRSIG" in out else "BROKEN"
-    l = get_logger()
-    if l: l.add_html_step("DNSSEC", "PASS" if status=="SIGNED" else "FAIL", f"Status: {status}")
-    return status
-
-def step_domain_status(domain: str) -> None: 
-    print_subheader("6. Domain Registration Status (RDAP)")
-    flags = get_curl_flags()
-    code, output = run_command(f"curl{flags} -s --connect-timeout 5 https://rdap.org/domain/{domain}", show_output=False)
-    detail = ""
-    if code == 0:
-        try:
-            data = json.loads(output)
-            statuses = [s for s in data.get("status", []) if "transfer" not in s]
-            if statuses: 
-                print_success(f"Status: {', '.join(statuses)}")
-                detail += f"Status: {statuses}\n"
-            for event in data.get("events", []):
-                if event.get("eventAction") == "expiration":
-                    print_success(f"Expires: {event.get('eventDate')}")
-                    detail += f"Expires: {event.get('eventDate')}"
-                    break
-        except: pass
-    l = get_logger()
-    if l: l.add_html_step("RDAP", "INFO", detail)
-
-
-
-def step_security_headers(domain: str) -> None: 
-    print_subheader("7.5. Security Header Audit")
-    flags = get_curl_flags()
-    cmd = f"curl{flags} -I --connect-timeout 5 https://{domain}"
-    code, output = run_command(cmd, show_output=False, log_output_to_file=True)
-    
-    headers = {}
-    if code == 0:
-        for line in output.splitlines():
-            if ':' in line:
-                k, v = line.split(':', 1)
-                headers[k.lower().strip()] = v.strip()
-    
-    checks = {
-        'strict-transport-security': 'HSTS',
-        'content-security-policy': 'CSP',
-        'x-frame-options': 'X-Frame',
-        'x-content-type-options': 'NoSniff',
-        'referrer-policy': 'Referrer'
-    }
-    
-    details = ""
-    passed = 0
-    for header, name in checks.items():
-        if header in headers:
-            print_success(f"{name}: Found")
-            details += f"{name}: PASS\n"
-            passed += 1
-        else:
-            print_warning(f"{name}: Missing")
-            details += f"{name}: MISSING\n"
-    l = get_logger()
-    if l: l.add_html_step("Security Headers", f"{passed}/{len(checks)}", details)
-
-    if 'strict-transport-security' in headers:
-        val = headers['strict-transport-security']
-        if 'preload' in val and 'includesubdomains' in val and 'max-age=' in val:
-            age = int(re.search(r'max-age=(\d+)', val).group(1)) # type: ignore
-            if age >= 31536000:
-                print_success("HSTS: Ready for Preload.")
-    
-    if shutil.which("curl"):
-        c2, out2 = run_command(f"curl{flags} -s https://hstspreload.org/api/v2/status?domain={domain}", show_output=False)
-        if c2 == 0:
-            if '"status": "preloaded"' in out2: print_success("HSTS Preload Status: Preloaded")
-            elif '"status": "pending"' in out2: print_info("HSTS Preload Status: Pending")
-
-def step_http3_udp(domain: str) -> bool:
-    print_subheader("8. HTTP/3 (QUIC) Check")
-    l = get_logger()
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.settimeout(2)
-        sock.sendto(b"PING", (domain, 443))
-        print_success("UDP 443 Open.")
-        if l: l.add_html_step("HTTP/3", "PASS", "UDP 443 Open")
-        return True
-    except Exception as e:
-        if l: l.add_html_step("HTTP/3", "FAIL", str(e))
-        return False
-
-def step_ocsp(domain: str) -> None: 
-    print_subheader("9.5 OCSP Stapling Check")
-    if not shutil.which("openssl"): return
-    cmd = f"openssl s_client -servername {domain} -connect {domain}:443 -status"
-    c, out = run_command(f"echo Q | {cmd}", log_output_to_file=True, show_output=False)
-    l = get_logger()
-    if c == 0:
-        if "OCSP Response Status: successful" in out:
-            print_success("OCSP Stapling: Active (Successful Response)")
-            if l: l.add_html_step("OCSP Stapling", "PASS", "Active")
-        elif "OCSP Response: no response sent" in out:
-            print_warning("OCSP Stapling: Not Active")
-            if l: l.add_html_step("OCSP Stapling", "WARN", "Not Active")
-
-def step_tcp(domain: str) -> bool:
-    print_subheader("10. TCP Connectivity")
-    l = get_logger()
-    from .utils import get_context
-    ctx = get_context()
-    timeout = int(ctx.get('timeout', 5))
-    try:
-        with socket.create_connection((domain, 443), timeout=timeout):
-            print_success("Connected.")
-            if l: l.add_html_step("TCP", "PASS", "Connected")
-            return True
-    except Exception as e:
-        if l: l.add_html_step("TCP", "FAIL", str(e))
-        return False
-
-def step_traceroute(domain: str) -> None: 
-    print_subheader("12. Traceroute")
-    cmd = f"tracert -h 15 {domain}" if os.name == 'nt' else f"traceroute -m 15 -w 2 {domain}"
-    
-    from .utils import get_context
-    ctx = get_context()
-    flags = ""
-    if ctx.get('ipv4'): flags = " -4"
-    if ctx.get('ipv6'): flags = " -6"
-    
-    if "traceroute" in cmd:
-        cmd = cmd.replace("traceroute", f"traceroute{flags}")
-    
-    c, out = run_command(cmd, timeout=60, log_output_to_file=True)
-    l = get_logger()
-    if l: l.add_html_step("Traceroute", "INFO", out)
-
-def step_cf_trace(domain: str) -> Tuple[bool, Dict[str, str]]:
-    print_subheader("13. CF Trace")
-    flags = get_curl_flags()
-    c, out = run_command(f"curl{flags} -s --connect-timeout 5 https://{domain}/cdn-cgi/trace", log_output_to_file=True)
-    if c == 0 and "colo=" in out:
-        d = dict(l.split('=', 1) for l in out.splitlines() if '=' in l)
-        print_success(f"Edge: {Colors.WHITE}{d.get('colo')} / {d.get('ip')}{Colors.ENDC}")
-        return True, d
-    print_warning("No CF trace found.")
-    return False, {}
-
-def step_cf_forced(domain: str) -> bool:
-    print_subheader("14. CF Forced")
-    return True
-
-def step_alt_ports(domain: str) -> Tuple[bool, List[int]]:
-    print_subheader("16. Alt Ports")
-    return False, []
-
-def step_redirects(domain: str) -> None: 
-    print_subheader("17. Redirect Chain Analysis")
-    current_url = f"http://{domain}"
-    hops = []
-    flags = get_curl_flags()
-    
-    for i in range(5): 
-        hops.append(current_url)
-        cmd = f'curl{flags} -I -s -w "%{{redirect_url}}" -o /dev/null {current_url}'
-        c, next_url = run_command(cmd, show_output=False, log_output_to_file=True)
-        if c == 0 and next_url.strip():
-            print_info(f"Hop {i+1}: {current_url} -> {next_url}")
-            current_url = next_url
-        else:
-            print_success(f"Final Destination: {current_url}")
-            break
-            
-    l = get_logger()
-    if l: l.add_html_step("Redirects", "INFO", "\n".join(hops))
-
-def step_waf_evasion(domain: str) -> None: 
-    print_subheader("18. WAF / User-Agent Test")
-    blocked = []
-    allowed = []
-    flags = get_curl_flags()
-    for name, ua in USER_AGENTS.items():
-        cmd = f'curl{flags} -I -s -o /dev/null -w "%{{http_code}}" -H "User-Agent: {ua}" https://{domain}'
-        c, code_str = run_command(cmd, show_output=False, log_output_to_file=True)
-        try:
-            code = int(code_str)
-            if code == 403 or code == 406:
-                print_warning(f"{name}: BLOCKED (HTTP {code})")
-                blocked.append(name)
-            else:
-                print_success(f"{name}: OK (HTTP {code})")
-                allowed.append(name)
-        except: pass
-    l = get_logger()
-    if blocked:
-        l.log(f"{Colors.WARNING}WAF Detected: Blocks {', '.join(blocked)}{Colors.ENDC}", force=True)
-    if l: l.add_html_step("WAF Evasion", "INFO", f"Blocked: {blocked}\nAllowed: {allowed}")
-
-def step_speed(domain: str) -> None: 
-    print_subheader("19. Throughput Speed Test")
-    flags = get_curl_flags()
-    cmd = f'curl{flags} -s -w "%{{speed_download}}" -o /dev/null https://{domain}/'
-    
-    speeds = []
-    for _ in range(3):
-        c, out = run_command(cmd, show_output=False, log_output_to_file=True)
-        if c == 0:
-            try:
-                s = float(out.strip())
-                speeds.append(s)
-            except: pass
-    
-    l = get_logger()
-    if speeds:
-        avg_speed = sum(speeds) / len(speeds)
-        mbps = (avg_speed * 8) / 1_000_000
-        print_success(f"Average Download Speed: {mbps:.2f} Mbps")
-        if l: l.add_html_step("Speed Test", "PASS", f"Avg: {mbps:.2f} Mbps")
-    else:
-        print_warning("Speed test failed to collect data.")
-
-def step_dns_benchmark(domain: str) -> None: 
-    print_subheader("20. DNS Resolver Benchmark")
-    results = []
-    if not shutil.which("dig"): return
-    
-    for name, ip in PUBLIC_RESOLVERS:
-        start = time.time()
-        cmd = f"dig @{ip} +short {domain}"
-        c, out = run_command(cmd, show_output=False)
-        end = time.time()
-        
-        if c == 0 and out.strip():
-            ms = (end - start) * 1000
-            results.append((name, ms))
-    
-    results.sort(key=lambda x: x[1])
-    
-    l = get_logger()
-    details = ""
-    for name, ms in results:
-        print_info(f"{name:<15}: {ms:.2f} ms")
-        details += f"{name}: {ms:.2f} ms\n"
-        
-    if l: l.add_html_step("DNS Benchmark", "INFO", details)
-
-def step_graph(domain: str) -> None: 
-    print_subheader("21. Topology Graph (DOT)")
-    hops = get_traceroute_hops(domain)
-    if not hops:
-        print_fail("Could not determine hops for graph.")
-        return
-        
-    dot = ["digraph G {"]
-    dot.append('  node [shape=box];')
-    dot.append(f'  User [label="User"];')
-    
-    previous = "User"
-    for i, hop in enumerate(hops):
-        name = f"Hop{i+1}"
-        dot.append(f'  {name} [label="{hop}"];')
-        dot.append(f'  "{previous}" -> "{name}";')
-        previous = name
-        
-    dot.append(f'  Dest [label="{domain}"];')
-    dot.append(f'  "{previous}" -> "Dest";')
-    dot.append("}")
-    
-    dot_str = "\n".join(dot)
-    print(dot_str)
-    
-    l = get_logger()
-    if l: l.log_file(f"Graphviz DOT:\n{dot_str}")
-
-def ping_host(host: str) -> float:
+def _ping_host(host: str) -> float:
     cmd = f"ping -c 1 -W 1 {host}" if os.name != 'nt' else f"ping -n 1 -w 1000 {host}"
     c, out = run_command(cmd, show_output=False, log_output_to_file=False)
     if c == 0:
@@ -616,47 +241,7 @@ def ping_host(host: str) -> float:
         if m: return float(m.group(1))
     return -1.0
 
-def step_websocket(domain: str, path: str = "/") -> None: 
-    print_subheader("22. WebSocket Handshake Check")
-    from .utils import get_context
-    ctx = get_context()
-    l = get_logger()
-    
-    host = domain
-    port = 443
-    
-    request = (
-        f"GET {path} HTTP/1.1\r\n"
-        f"Host: {domain}\r\n"
-        f"Upgrade: websocket\r\n"
-        f"Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-        f"Sec-WebSocket-Version: 13\r\n"
-        f"\r\n"
-    )
-    
-    try:
-        context = ssl.create_default_context()
-        timeout = int(ctx.get('timeout', 5))
-        
-        with socket.create_connection((host, port), timeout=timeout) as sock:
-            with context.wrap_socket(sock, server_hostname=domain) as ssock:
-                ssock.sendall(request.encode())
-                response = ssock.recv(4096).decode(errors='ignore')
-                
-                if "101 Switching Protocols" in response:
-                    print_success("WebSocket Handshake: Success (101 Switching Protocols)")
-                    if l: l.add_html_step("WebSocket", "PASS", "Connected")
-                else:
-                    status_line = response.split('\r\n')[0] if response else "No response"
-                    print_fail(f"WebSocket Handshake Failed: {status_line}")
-                    if l: l.add_html_step("WebSocket", "FAIL", status_line)
-                    
-    except Exception as e:
-        print_fail(f"WebSocket Error: {e}")
-        if l: l.add_html_step("WebSocket", "FAIL", str(e))
-
-def get_traceroute_hops(domain: str) -> List[str]:
+def _get_hops(domain: str) -> List[str]:
     cmd = f"tracert -h 15 {domain}" if os.name == 'nt' else f"traceroute -m 15 -w 2 {domain}"
     from .utils import get_context
     ctx = get_context()
@@ -680,7 +265,7 @@ def get_traceroute_hops(domain: str) -> List[str]:
 
 def run_mtr(domain: str) -> None: 
     print(f"Tracing route to {domain}...")
-    hops = get_traceroute_hops(domain)
+    hops = _get_hops(domain)
     if not hops:
         print("No hops found or traceroute failed.")
         return
@@ -690,12 +275,12 @@ def run_mtr(domain: str) -> None:
     try:
         while True:
             os.system('cls' if os.name == 'nt' else 'clear')
-            print(f"{Colors.BOLD}--- MTR Mode: {domain} (Ctrl+C to quit) ---{Colors.ENDC}")
+            print(f"{Colors.BOLD}--- MTR Mode: {domain} (Ctrl+C to quit) ---")
             print(f"{ 'HOST':<30} | {'LOSS%':<6} | {'AVG':<6} | {'LAST':<6}")
             print("-" * 60)
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                futures = {executor.submit(ping_host, h): h for h in hops}
+                futures = {executor.submit(_ping_host, h): h for h in hops}
                 for f in concurrent.futures.as_completed(futures):
                     h = futures[f]
                     stats[h]["sent"] += 1
