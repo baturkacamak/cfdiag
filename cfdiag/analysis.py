@@ -97,7 +97,7 @@ def analyze_http(probe: ProbeHTTPResult) -> AnalysisResult:
         return _res(Severity.ERROR, "HTTP_SERVER_ERROR", f"Server Error (HTTP {code}).", meta,
                    ["Check server logs", "Check upstream"])
 
-        return _res(Severity.WARN, "UNKNOWN", f"Unexpected status: {code}", meta)
+    return _res(Severity.WARN, "UNKNOWN", f"Unexpected status: {code}", meta)
 
 def analyze_tls(probe: ProbeTLSResult) -> AnalysisResult:
     meta = {

@@ -16,6 +16,9 @@ setup(
     install_requires=[
         "certifi",
     ],
+    extras_require={
+        "repl": ["prompt-toolkit>=3.0.0", "rich>=13.0.0"],
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

@@ -756,6 +756,12 @@ def step_origin(domain: str, ip: str) -> None:
     print_subheader(f"15. Direct Origin Check ({ip})")
     l = get_logger()
     
+    hops = []
+    current_url = f"http://{ip}"
+    flags = get_curl_flags()
+    # Add Host header to ensure we reach the correct vhost on the origin IP
+    flags += f' -H "Host: {domain}"'
+    
     for i in range(5): 
         hops.append(current_url)
         cmd = f'curl{flags} -I -s -w "%{{redirect_url}}" -o /dev/null {current_url}'
@@ -956,7 +962,7 @@ def step_tcp(domain: str) -> bool:
         return False
 
 def step_traceroute(domain: str) -> None:
-    """Run traceroute"""
+    """Run traceroute with intelligent timeout detection - unlimited hops unless consecutive timeouts detected"""
     print_subheader("12. Traceroute")
     l = get_logger()
     trace_cmd = "tracert" if os.name == 'nt' else "traceroute"
@@ -966,24 +972,87 @@ def step_traceroute(domain: str) -> None:
     
     from .utils import get_context
     ctx = get_context()
-    traceroute_limit = ctx.get('traceroute_limit', 5)
+    # traceroute_limit now means: stop after N consecutive timeout patterns
+    max_consecutive_timeouts = ctx.get('traceroute_limit', 5)
     
-    # Build traceroute command with limit
+    # Build traceroute command WITHOUT hop limit (unlimited hops)
+    # Use a high default hop limit (30) to allow traceroute to run naturally
+    # The actual stopping will be controlled by consecutive timeout detection
     if os.name == 'nt':
-        # Windows tracert uses -h for max hops
-        cmd = f"{trace_cmd} -h {traceroute_limit} {domain}"
+        # Windows tracert uses -h for max hops, set to 30 (default is usually 30)
+        cmd = f"{trace_cmd} -h 30 {domain}"
         # Windows tracert doesn't support -4/-6 flags directly
     else:
-        # Linux/Unix traceroute uses -m for max hops
-        cmd = f"{trace_cmd} -m {traceroute_limit} {domain}"
+        # Linux/Unix traceroute uses -m for max hops, set to 30 (default is usually 30)
+        cmd = f"{trace_cmd} -m 30 {domain}"
         # Add IPv4/IPv6 flags if specified (Linux/Unix only)
         if ctx.get('ipv4'):
             cmd = cmd.replace(trace_cmd, f"{trace_cmd} -4")
         elif ctx.get('ipv6'):
             cmd = cmd.replace(trace_cmd, f"{trace_cmd} -6")
     
-    code, output = run_command(cmd, timeout=30, log_output_to_file=True)
-    if l: l.log_file(f"Traceroute output:\n{output}")
+    # Run traceroute with real-time monitoring to detect consecutive timeouts
+    try:
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        output_lines = []
+        consecutive_timeouts = 0
+        
+        while True:
+            line = process.stdout.readline()  # type: ignore
+            if not line and process.poll() is not None:
+                break
+            
+            if line:
+                output_lines.append(line)
+                
+                # Check for timeout patterns: "* * *" or similar timeout indicators
+                # Common patterns: "* * *", "*", "Request timed out", "timeout"
+                line_stripped = line.strip()
+                is_timeout = (
+                    "* * *" in line_stripped or
+                    (line_stripped.count("*") >= 3) or  # Multiple asterisks
+                    "Request timed out" in line_stripped or
+                    ("timeout" in line_stripped.lower() and "*" in line_stripped)
+                )
+                
+                if is_timeout:
+                    consecutive_timeouts += 1
+                    if consecutive_timeouts >= max_consecutive_timeouts:
+                        # Stop early if we see too many consecutive timeouts
+                        process.terminate()
+                        try:
+                            process.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                        
+                        if l:
+                            l.log_file(f"Traceroute stopped early after {consecutive_timeouts} consecutive timeout patterns (* * *)")
+                            l.log_file(f"Traceroute output:\n{''.join(output_lines)}")
+                            l.log_file(f"[NOTE] Traceroute was terminated early due to {consecutive_timeouts} consecutive timeout patterns (limit: {max_consecutive_timeouts})")
+                        return
+                else:
+                    # Reset counter if we get a valid response
+                    consecutive_timeouts = 0
+        
+        # Get remaining output if process ended normally
+        remaining = process.stdout.read()  # type: ignore
+        if remaining:
+            output_lines.append(remaining)
+        
+        full_output = "".join(output_lines)
+        exit_code = process.poll()
+        
+        if l:
+            l.log_file(f"Traceroute output:\n{full_output}")
+            if exit_code and exit_code != 0:
+                l.log_file(f"[NOTE] Traceroute exited with code {exit_code}")
+    
+    except Exception as e:
+        if l:
+            l.log_file(f"[ERROR] Traceroute failed: {e}")
+        # Fallback to simple run_command if monitoring fails
+        code, output = run_command(cmd, timeout=30, log_output_to_file=True)
+        if l: l.log_file(f"Traceroute output:\n{output}")
 
 def step_cf_trace(domain: str) -> Tuple[bool, Dict[str, Any]]:
     """Check Cloudflare trace endpoint"""
@@ -1087,8 +1156,8 @@ def step_websocket(domain: str, path: str = "/") -> None: # Feature: WebSocket H
 def get_traceroute_hops(domain: str) -> List[str]:
     from .utils import get_context
     ctx = get_context()
-    traceroute_limit = ctx.get('traceroute_limit', 15)  # Default to 15 for MTR mode if not set
-    cmd = f"tracert -h {traceroute_limit} {domain}" if os.name == 'nt' else f"traceroute -m {traceroute_limit} -w 2 {domain}"
+    # For MTR mode, use a reasonable hop limit (30) since we're just extracting IPs
+    cmd = f"tracert -h 30 {domain}" if os.name == 'nt' else f"traceroute -m 30 -w 2 {domain}"
     flags = ""
     if ctx.get('ipv4'): flags = " -4"
     if ctx.get('ipv6'): flags = " -6"

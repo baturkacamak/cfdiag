@@ -244,93 +244,171 @@ class TestNetwork(unittest.TestCase):
         # For now I just remove test_step_websocket.
 
     @patch('cfdiag.network.shutil.which')
-    @patch('cfdiag.network.run_command')
-    def test_step_traceroute_with_default_limit(self, mock_run, mock_which):
-        """Test traceroute uses default limit of 5 when not specified."""
+    @patch('cfdiag.network.subprocess.Popen')
+    def test_step_traceroute_with_default_limit(self, mock_popen, mock_which):
+        """Test traceroute uses unlimited hops with default timeout limit of 5."""
         import os
         mock_which.return_value = '/usr/bin/traceroute'
-        mock_run.return_value = (0, "traceroute output")
         
-        # Set context without traceroute_limit (should default to 5)
+        # Mock subprocess.Popen to simulate traceroute output
+        mock_process = MagicMock()
+        mock_process.stdout.readline.side_effect = [
+            " 1  gateway (192.168.1.1)  0.123 ms\n",
+            " 2  router (10.0.0.1)  1.456 ms\n",
+            ""  # Empty line to signal end
+        ]
+        mock_process.poll.return_value = 0
+        mock_process.stdout.read.return_value = ""
+        mock_popen.return_value = mock_process
+        
+        # Set context without traceroute_limit (should default to 5 consecutive timeouts)
         cfdiag.utils.set_context({})
         
         cfdiag.network.step_traceroute("example.com")
         
-        # Verify traceroute was called with -m 5 (Linux) or -h 5 (Windows)
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args[0]
+        # Verify subprocess.Popen was called with unlimited hops (30 max)
+        mock_popen.assert_called_once()
+        call_args = mock_popen.call_args[0]
         cmd = call_args[0]
         if os.name == 'nt':
-            self.assertIn('-h 5', cmd)
+            self.assertIn('-h 30', cmd)
         else:
-            self.assertIn('-m 5', cmd)
+            self.assertIn('-m 30', cmd)
         self.assertIn('example.com', cmd)
 
     @patch('cfdiag.network.shutil.which')
-    @patch('cfdiag.network.run_command')
-    def test_step_traceroute_with_custom_limit(self, mock_run, mock_which):
-        """Test traceroute uses custom limit from context."""
+    @patch('cfdiag.network.subprocess.Popen')
+    def test_step_traceroute_with_custom_timeout_limit(self, mock_popen, mock_which):
+        """Test traceroute stops after custom number of consecutive timeouts."""
         import os
         mock_which.return_value = '/usr/bin/traceroute'
-        mock_run.return_value = (0, "traceroute output")
         
-        # Set context with custom traceroute_limit
-        cfdiag.utils.set_context({'traceroute_limit': 10})
+        # Mock subprocess.Popen to simulate consecutive timeouts
+        mock_process = MagicMock()
+        mock_process.stdout.readline.side_effect = [
+            " 1  gateway (192.168.1.1)  0.123 ms\n",
+            " 2  * * *\n",  # Timeout 1
+            " 3  * * *\n",  # Timeout 2
+            " 4  * * *\n",  # Timeout 3
+            " 5  * * *\n",  # Timeout 4
+            " 6  * * *\n",  # Timeout 5
+            " 7  * * *\n",  # Timeout 6 - should stop here (limit is 5)
+        ]
+        mock_process.poll.return_value = None  # Process still running
+        mock_process.stdout.read.return_value = ""
+        mock_popen.return_value = mock_process
+        
+        # Set context with custom traceroute_limit (consecutive timeouts before stopping)
+        cfdiag.utils.set_context({'traceroute_limit': 5})
         
         cfdiag.network.step_traceroute("example.com")
         
-        # Verify traceroute was called with custom limit
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args[0]
+        # Verify subprocess.Popen was called with unlimited hops
+        mock_popen.assert_called_once()
+        call_args = mock_popen.call_args[0]
         cmd = call_args[0]
         if os.name == 'nt':
-            self.assertIn('-h 10', cmd)
+            self.assertIn('-h 30', cmd)
         else:
-            self.assertIn('-m 10', cmd)
-        self.assertIn('example.com', cmd)
+            self.assertIn('-m 30', cmd)
+        
+        # Verify process was terminated after 5 consecutive timeouts
+        mock_process.terminate.assert_called_once()
 
     @patch('cfdiag.network.shutil.which')
-    @patch('cfdiag.network.run_command')
-    def test_step_traceroute_with_ipv4_flag(self, mock_run, mock_which):
+    @patch('cfdiag.network.subprocess.Popen')
+    def test_step_traceroute_with_ipv4_flag(self, mock_popen, mock_which):
         """Test traceroute includes IPv4 flag when specified in context."""
         import os
         mock_which.return_value = '/usr/bin/traceroute'
-        mock_run.return_value = (0, "traceroute output")
+        
+        # Mock subprocess.Popen to simulate traceroute output
+        mock_process = MagicMock()
+        mock_process.stdout.readline.side_effect = [""]
+        mock_process.poll.return_value = 0
+        mock_process.stdout.read.return_value = ""
+        mock_popen.return_value = mock_process
         
         cfdiag.utils.set_context({'traceroute_limit': 5, 'ipv4': True})
         
         cfdiag.network.step_traceroute("example.com")
         
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args[0]
+        mock_popen.assert_called_once()
+        call_args = mock_popen.call_args[0]
         cmd = call_args[0]
-        self.assertIn('-4', cmd)
+        if os.name != 'nt':  # IPv4 flag only on Linux/Unix
+            self.assertIn('-4', cmd)
 
     @patch('cfdiag.network.shutil.which')
-    @patch('cfdiag.network.run_command')
-    def test_step_traceroute_with_ipv6_flag(self, mock_run, mock_which):
+    @patch('cfdiag.network.subprocess.Popen')
+    def test_step_traceroute_with_ipv6_flag(self, mock_popen, mock_which):
         """Test traceroute includes IPv6 flag when specified in context."""
         import os
         mock_which.return_value = '/usr/bin/traceroute'
-        mock_run.return_value = (0, "traceroute output")
+        
+        # Mock subprocess.Popen to simulate traceroute output
+        mock_process = MagicMock()
+        mock_process.stdout.readline.side_effect = [""]
+        mock_process.poll.return_value = 0
+        mock_process.stdout.read.return_value = ""
+        mock_popen.return_value = mock_process
         
         cfdiag.utils.set_context({'traceroute_limit': 5, 'ipv6': True})
         
         cfdiag.network.step_traceroute("example.com")
         
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args[0]
+        mock_popen.assert_called_once()
+        call_args = mock_popen.call_args[0]
         cmd = call_args[0]
-        self.assertIn('-6', cmd)
+        if os.name != 'nt':  # IPv6 flag only on Linux/Unix
+            self.assertIn('-6', cmd)
+
+    @patch('cfdiag.network.shutil.which')
+    @patch('cfdiag.network.subprocess.Popen')
+    def test_step_traceroute_stops_on_consecutive_timeouts(self, mock_popen, mock_which):
+        """Test traceroute stops early when consecutive timeout patterns are detected."""
+        import os
+        mock_which.return_value = '/usr/bin/traceroute'
+        
+        # Mock subprocess.Popen to simulate consecutive timeout patterns
+        mock_process = MagicMock()
+        mock_process.stdout.readline.side_effect = [
+            " 1  gateway (192.168.1.1)  0.123 ms\n",
+            " 2  * * *\n",  # First timeout
+            " 3  * * *\n",  # Second timeout
+            " 4  * * *\n",  # Third timeout
+            " 5  * * *\n",  # Fourth timeout
+            " 6  * * *\n",  # Fifth timeout - should trigger early stop (default limit is 5)
+        ]
+        mock_process.poll.return_value = None  # Process still running
+        mock_process.stdout.read.return_value = ""
+        mock_popen.return_value = mock_process
+        
+        # Use default limit (5 consecutive timeouts)
+        cfdiag.utils.set_context({})
+        
+        cfdiag.network.step_traceroute("example.com")
+        
+        # Verify process was terminated (terminate should be called)
+        mock_process.terminate.assert_called_once()
+        
+        # Verify subprocess.Popen was called with unlimited hops
+        mock_popen.assert_called_once()
+        call_args = mock_popen.call_args[0]
+        cmd = call_args[0]
+        if os.name == 'nt':
+            self.assertIn('-h 30', cmd)
+        else:
+            self.assertIn('-m 30', cmd)
 
     @patch('cfdiag.network.run_command')
-    def test_get_traceroute_hops_uses_context_limit(self, mock_run):
-        """Test get_traceroute_hops uses traceroute_limit from context."""
+    def test_get_traceroute_hops_uses_reasonable_limit(self, mock_run):
+        """Test get_traceroute_hops uses reasonable hop limit (30) for MTR mode."""
         import os
         mock_run.return_value = (0, "1.2.3.4 (1.2.3.4) 10ms")
         
-        # Set context with custom limit
-        cfdiag.utils.set_context({'traceroute_limit': 8})
+        # Set context (limit doesn't affect get_traceroute_hops anymore)
+        cfdiag.utils.set_context({})
         
         cfdiag.network.get_traceroute_hops("example.com")
         
@@ -338,13 +416,13 @@ class TestNetwork(unittest.TestCase):
         call_args = mock_run.call_args[0]
         cmd = call_args[0]
         if os.name == 'nt':
-            self.assertIn('-h 8', cmd)
+            self.assertIn('-h 30', cmd)
         else:
-            self.assertIn('-m 8', cmd)
+            self.assertIn('-m 30', cmd)
 
     @patch('cfdiag.network.run_command')
-    def test_get_traceroute_hops_defaults_to_15_when_not_set(self, mock_run):
-        """Test get_traceroute_hops defaults to 15 when traceroute_limit not in context."""
+    def test_get_traceroute_hops_uses_30_hops(self, mock_run):
+        """Test get_traceroute_hops uses 30 hops limit for MTR mode."""
         import os
         mock_run.return_value = (0, "1.2.3.4 (1.2.3.4) 10ms")
         
@@ -357,9 +435,9 @@ class TestNetwork(unittest.TestCase):
         call_args = mock_run.call_args[0]
         cmd = call_args[0]
         if os.name == 'nt':
-            self.assertIn('-h 15', cmd)
+            self.assertIn('-h 30', cmd)
         else:
-            self.assertIn('-m 15', cmd)
+            self.assertIn('-m 30', cmd)
         
 class TestCoreCLI(unittest.TestCase):
     def setUp(self):

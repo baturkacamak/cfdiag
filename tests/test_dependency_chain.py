@@ -18,8 +18,8 @@ class TestDependencyChain(unittest.TestCase):
 
         self.patches = [
             patch("cfdiag.core.get_logger", return_value=self.logger),
-            patch("cfdiag.core.save_history", return_value={}),
-            patch("cfdiag.core.save_metrics"),
+            # patch("cfdiag.core.save_history", return_value={}),  # Removed in v3.12.8
+            # patch("cfdiag.core.save_metrics"),                   # Removed in v3.12.8
             patch("cfdiag.core.step_blacklist"),
             patch("cfdiag.core.step_dns_trace"),
             patch("cfdiag.core.step_propagation", return_value="N/A"),
@@ -29,10 +29,10 @@ class TestDependencyChain(unittest.TestCase):
             patch("cfdiag.core.step_cf_forced", return_value=True),
             patch("cfdiag.core.step_cf_trace", return_value=(False, {})),
             patch("cfdiag.core.step_alt_ports", return_value=(False, [])),
-            patch("cfdiag.core.step_redirects"),
+            # patch("cfdiag.core.step_redirects"), # Removed
             patch("cfdiag.core.step_waf_evasion"),
             patch("cfdiag.core.step_speed"),
-            patch("cfdiag.core.step_dns_benchmark"),
+            # patch("cfdiag.core.step_dns_benchmark"), # Removed
             patch("cfdiag.core.step_ocsp"),
             patch("cfdiag.core.step_websocket"),
             patch("cfdiag.core.step_audit"),
@@ -96,11 +96,14 @@ class TestDependencyChain(unittest.TestCase):
     @patch("cfdiag.core.step_http")
     @patch("cfdiag.core.step_tcp")
     @patch("cfdiag.core.step_dns")
-    def test_dns_failure_stops_before_tcp_and_others(self, mock_dns, mock_tcp, mock_http, mock_ssl, mock_mtu):
+    @patch("cfdiag.core.probe_dns")
+    def test_dns_failure_stops_before_tcp_and_others(self, mock_probe_dns, mock_dns, mock_tcp, mock_http, mock_ssl, mock_mtu):
         """
         TEST CASE 3: When DNS fails, TCP and all dependent checks must not be executed.
         """
-        mock_dns.return_value = (False, [], [])
+        # probe_dns failure simulation
+        mock_probe_dns.return_value = {"error": "NXDOMAIN", "records": {"A": [], "AAAA": []}}
+        mock_dns.return_value = (False, [], []) # This return value is likely ignored by run_diagnostics logic which uses probe_dns, but keeping for safety if step_dns is used for something else.
 
         result = cfdiag.core.run_diagnostics("example.com")
 

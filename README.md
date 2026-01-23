@@ -87,6 +87,35 @@ cfdiag --analyze-logs /var/log/nginx/access.log
 cfdiag example.com --mtr
 ```
 
+### Interactive REPL Mode
+Launch a modern interactive terminal with beautiful formatting, command autocomplete, and suggestions:
+```bash
+cfdiag --repl
+```
+
+In REPL mode, you can:
+- Run diagnostics: `diagnose example.com`
+- Set configuration: `set timeout 15`
+- View help: `help` or `help diagnose`
+- Use command autocomplete (press Tab for suggestions)
+- See command suggestions as you type
+- Navigate command history with arrow keys
+
+**Features:**
+- Beautiful banner with version and working directory
+- Rich terminal formatting (colors, styling)
+- Intelligent command autocomplete with descriptions
+- Command suggestions displayed below input
+- Persistent command history
+- All diagnostic features accessible via commands
+
+**Installation:** REPL mode requires `prompt-toolkit` and `rich` for the best experience:
+```bash
+pip install prompt-toolkit rich
+# or
+pip install cfdiag[repl]
+```
+
 ### Automation
 ```bash
 cfdiag example.com --json | jq .

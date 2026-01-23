@@ -448,7 +448,7 @@ _cfdiag()
     COMPREPLY=()
     cur=\"${COMP_WORDS[COMP_CWORD]}\"
     prev=\"${COMP_WORDS[COMP_CWORD-1]}\" 
-    opts=\"--origin --expect --profile --file --threads --ipv4 --ipv6 --proxy --timeout --traceroute-limit --header --keylog --mtr --watch --json --markdown --junit --metrics --lint-config --analyze-logs --serve --grafana --completion --verbose --no-color --interactive --version --update\"
+    opts=\"--origin --expect --profile --file --threads --ipv4 --ipv6 --proxy --timeout --traceroute-limit --header --keylog --mtr --watch --json --markdown --junit --metrics --lint-config --analyze-logs --serve --grafana --completion --verbose --no-color --interactive --repl --version --update\"
 
     if [[ ${cur} == -* ]] ; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -473,7 +473,7 @@ _cfdiag() {
         '--ipv6[Force IPv6]'
         '--proxy[HTTP Proxy URL]:url'
         '--timeout[Connection timeout in seconds]:int'
-        '--traceroute-limit[Maximum number of hops for traceroute]:int'
+        '--traceroute-limit[Stop after N consecutive timeout patterns]:int'
         '--header[Custom HTTP header]:string'
         '--keylog[SSL Keylog file]:filename:_files'
         '--mtr[Run interactive MTR trace]'
@@ -490,6 +490,7 @@ _cfdiag() {
         '--verbose[Enable verbose output]'
         '--no-color[Disable color output]'
         '--interactive[Run in interactive mode]'
+        '--repl[Run in interactive REPL mode]'
         '--version[Show version]'
         '--update[Self-update tool]'
     )
@@ -547,7 +548,7 @@ For more information, visit: https://github.com/baturkacamak/cfdiag
     network_group.add_argument("--timeout", type=int, default=10, metavar="SECONDS",
                               help="Connection timeout in seconds (default: 10)")
     network_group.add_argument("--traceroute-limit", type=int, default=5, metavar="N",
-                              help="Maximum number of hops for traceroute (default: 5). Prevents infinite loops when traceroute returns repeated timeouts.")
+                              help="Stop traceroute after N consecutive timeout patterns (* * *) (default: 5). Traceroute runs unlimited hops otherwise, preventing infinite loops when stuck.")
     network_group.add_argument("--header", action="append", metavar="HEADER",
                               help="Add custom HTTP header (can be used multiple times). Format: 'X-Foo: Bar'")
     
@@ -592,6 +593,8 @@ For more information, visit: https://github.com/baturkacamak/cfdiag
                               help="Disable colored output (useful for scripts or terminals without color support)")
     general_group.add_argument("--interactive", "-i", action="store_true",
                               help="Run in interactive mode - guided wizard for easier usage")
+    general_group.add_argument("--repl", action="store_true",
+                              help="Run in interactive REPL mode with command autocomplete and banner")
     general_group.add_argument("--version", action="version", version=f"cfdiag {VERSION}",
                               help="Show version number and exit")
     general_group.add_argument("--update", action="store_true",
@@ -599,7 +602,12 @@ For more information, visit: https://github.com/baturkacamak/cfdiag
     
     args = parser.parse_args()
     
-    # Handle interactive mode early
+    # Handle interactive modes early
+    if args.repl:
+        from .repl import run_repl
+        run_repl()
+        return
+    
     if args.interactive:
         interactive_mode()
         return
