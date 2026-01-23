@@ -10,6 +10,9 @@ import os
 import time
 import ipaddress
 from typing import Tuple, List, Dict, Optional
+
+import certifi
+
 from .utils import get_curl_flags, PUBLIC_RESOLVERS, DNSBL_LIST, USER_AGENTS, console_lock, Colors, CLOUDFLARE_IPS
 from .reporting import (
     get_logger, print_header, print_subheader, print_success, 
@@ -433,7 +436,8 @@ def step_http3_udp(domain: str) -> bool:
 
 def step_ssl(domain: str) -> bool:
     print_subheader("9. SSL/TLS Check")
-    context = ssl.create_default_context()
+    # Use certifi CA bundle explicitly to avoid false negative verification failures.
+    context = ssl.create_default_context(cafile=certifi.where())
     
     from .utils import get_context
     ctx = get_context()
@@ -714,7 +718,8 @@ def step_websocket(domain: str, path: str = "/") -> None: # Feature: WebSocket H
     )
     
     try:
-        context = ssl.create_default_context()
+        # Reuse the same trusted CA bundle for WebSocket TLS as well.
+        context = ssl.create_default_context(cafile=certifi.where())
         timeout = int(ctx.get('timeout', 5))
         
         with socket.create_connection((host, port), timeout=timeout) as sock:
