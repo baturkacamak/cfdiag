@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.12.4] - 2026-01-23
+### Fixed
+- **Core:** Corrected implementation merged from working-version branch. This release fixes issues present in v3.12.3.
+- **HTML Output:** Implemented HTML output filtering for remote curl commands.
+- **Logging:** Enhanced logging in FileLogger to include verbose output in reports.
+- **RDAP:** Enhanced RDAP error handling and logging in step_domain_status function.
+- **DNS:** Enhanced DNS trace error handling with improved unit tests.
+- **HTTP:** Enhanced HTTP timeout handling for Cloudflare users.
+- **WAF:** Implemented WAF detection in step_http and step_waf_evasion functions.
+- **Dependencies:** Refactored diagnostic checks to enforce dependency chain and improve skip logic.
+
 ## [v3.12.3] - 2026-01-22
 ### Changed
 - **Architecture:** Complete architectural cleanup. Step functions are now strictly separated and return `None`.
