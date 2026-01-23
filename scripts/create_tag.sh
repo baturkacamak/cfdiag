@@ -38,13 +38,15 @@ echo "Updating VERSION to $VERSION in code files..."
 # Update VERSION in each file
 for file in "${VERSION_FILES[@]}"; do
     if [ -f "$file" ]; then
-        # Update VERSION = "x.x.x" pattern
+        # Update both patterns: VERSION = "x.x.x" (for utils.py) and version="x.x.x" (for setup.py)
         if [[ "$OSTYPE" == "darwin"* ]]; then
             # macOS
-            sed -i '' "s/VERSION = \"[0-9]\+\.[0-9]\+\.[0-9]\+\"/VERSION = \"$VERSION\"/g" "$file"
+            sed -i '' -e "s/VERSION = \"[0-9]\+\.[0-9]\+\.[0-9]\+\"/VERSION = \"$VERSION\"/g" \
+                     -e "s/version=\"[0-9]\+\.[0-9]\+\.[0-9]\+\"/version=\"$VERSION\"/g" "$file"
         else
             # Linux
-            sed -i "s/VERSION = \"[0-9]\+\.[0-9]\+\.[0-9]\+\"/VERSION = \"$VERSION\"/g" "$file"
+            sed -i -e "s/VERSION = \"[0-9]\+\.[0-9]\+\.[0-9]\+\"/VERSION = \"$VERSION\"/g" \
+                  -e "s/version=\"[0-9]\+\.[0-9]\+\.[0-9]\+\"/version=\"$VERSION\"/g" "$file"
         fi
         echo "  ✓ Updated $file"
     else
