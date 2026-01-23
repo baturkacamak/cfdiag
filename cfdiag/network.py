@@ -323,23 +323,125 @@ def step_dnssec(domain: str) -> Optional[str]:
 def step_domain_status(domain: str) -> None:
     print_subheader("6. Domain Registration Status (RDAP)")
     flags = get_curl_flags()
-    code, output = run_command(f"curl{flags} -s --connect-timeout 5 https://rdap.org/domain/{domain}", show_output=False)
-    detail = ""
-    if code == 0:
-        try:
-            data = json.loads(output)
-            statuses = [s for s in data.get("status", []) if "transfer" not in s]
-            if statuses: 
-                print_success(f"Status: {', '.join(statuses)}")
-                detail += f"Status: {statuses}\n"
-            for event in data.get("events", []):
-                if event.get("eventAction") == "expiration":
-                    print_success(f"Expires: {event.get('eventDate')}")
-                    detail += f"Expires: {event.get('eventDate')}"
-                    break
-        except: pass
+    # Use longer timeout for RDAP servers (they can be slow)
+    # Also capture HTTP status code
+    cmd = f"curl{flags} -s -w \"\\nHTTP_CODE:%{{http_code}}\" --connect-timeout 10 --max-time 15 https://rdap.org/domain/{domain}"
+    code, output = run_command(cmd, show_output=False, log_output_to_file=True)
+    
     l = get_logger()
-    if l: l.add_html_step("RDAP", "INFO", detail)
+    detail = ""
+    status = "INFO"
+    error_message = None
+    
+    # Extract HTTP status code from output
+    http_code = None
+    if "HTTP_CODE:" in output:
+        parts = output.split("HTTP_CODE:")
+        json_output = parts[0].strip()
+        try:
+            http_code = int(parts[1].strip())
+        except (ValueError, IndexError):
+            pass
+    else:
+        json_output = output
+    
+    # Log the raw response for debugging
+    if l:
+        l.log_file(f"RDAP Query URL: https://rdap.org/domain/{domain}")
+        l.log_file(f"RDAP Response Code: {code}, HTTP Code: {http_code}")
+        if output:
+            l.log_file(f"RDAP Raw Output (first 500 chars): {output[:500]}")
+    
+    # Handle curl errors (timeout, connection errors)
+    if code != 0:
+        if code == 28:
+            error_message = "Request Timed Out: RDAP server did not respond within timeout period"
+            status = "WARN"
+        elif code == 7:
+            error_message = "Connection Error: Could not connect to RDAP server"
+            status = "WARN"
+        else:
+            error_message = f"Query Failed: curl exit code {code}"
+            status = "WARN"
+        detail = error_message
+        print_warning(f"RDAP: {error_message}")
+    # Handle HTTP error codes
+    elif http_code and http_code >= 400:
+        if http_code == 404:
+            error_message = "Query Failed: 404 (Domain not found in RDAP database)"
+        elif http_code == 429:
+            error_message = "Query Failed: 429 (Too Many Requests - Rate limited)"
+        elif http_code >= 500:
+            error_message = f"Query Failed: {http_code} (RDAP server error)"
+        else:
+            error_message = f"Query Failed: {http_code}"
+        status = "WARN"
+        detail = error_message
+        print_warning(f"RDAP: {error_message}")
+    # Handle successful response
+    elif code == 0 and json_output:
+        try:
+            data = json.loads(json_output)
+            
+            # Check if data is empty or invalid
+            if not data or not isinstance(data, dict):
+                error_message = "RDAP Data Not Available: Empty or invalid response"
+                status = "WARN"
+                detail = error_message
+                print_warning(f"RDAP: {error_message}")
+            else:
+                # Parse successful data
+                statuses = [s for s in data.get("status", []) if "transfer" not in s]
+                if statuses: 
+                    print_success(f"Status: {', '.join(statuses)}")
+                    detail += f"Status: {statuses}\n"
+                else:
+                    detail += "Status: No status information available\n"
+                
+                # Extract expiration date
+                expiration_found = False
+                for event in data.get("events", []):
+                    if event.get("eventAction") == "expiration":
+                        exp_date = event.get("eventDate", "")
+                        if exp_date:
+                            print_success(f"Expires: {exp_date}")
+                            detail += f"Expires: {exp_date}"
+                            expiration_found = True
+                            break
+                
+                # Extract handle if available
+                handle = data.get("handle")
+                if handle:
+                    detail = f"Handle: {handle}\n" + detail
+                
+                if not statuses and not expiration_found:
+                    detail = "No RDAP records found: Domain exists but no detailed information available"
+                    status = "INFO"
+        except json.JSONDecodeError as e:
+            error_message = f"Data parsing failed: Invalid JSON response - {str(e)}"
+            status = "WARN"
+            detail = error_message
+            print_warning(f"RDAP: {error_message}")
+        except Exception as e:
+            error_message = f"Unexpected error processing RDAP data: {str(e)}"
+            status = "WARN"
+            detail = error_message
+            if l:
+                l.log_file(f"RDAP Processing Error: {str(e)}")
+            print_warning(f"RDAP: {error_message}")
+    else:
+        # No output or empty response
+        error_message = "RDAP Data Not Available: No response from server"
+        status = "WARN"
+        detail = error_message
+        print_warning(f"RDAP: {error_message}")
+    
+    # Always add HTML step with meaningful content (never empty)
+    if not detail:
+        detail = "RDAP Data Not Available"
+    
+    if l:
+        l.add_html_step("RDAP", status, detail)
 
 def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     print_subheader("7. HTTP/HTTPS Availability")
