@@ -221,84 +221,94 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     dnssec_status = step_dnssec(domain)
     step_domain_status(domain)
     
-    # State flags for dependent checks
+    # State flags and human-readable status strings for dependent checks
     http_ok = False
     tcp_ok = False
     ssl_ok = False
     mtu_ok = False
     http_res = ("SKIPPED", 0, False, {})
-    
-    # 7. HTTP Check (Depends on DNS)
-    if dns_ok:
-        http_res = step_http(domain)
-        # http_res[1] is http_code. If > 0, we got a response.
-        if http_res[1] > 0:
-            http_ok = True
-    else:
+    ssl_status = "N/A"
+    mtu_status = "N/A"
+
+    # If DNS failed, skip all downstream network checks entirely.
+    if not dns_ok:
         print_subheader("7. HTTP/HTTPS Availability")
         print_skip("DNS resolution failed.")
-
-    # 7.5 Security Headers (Depends on HTTP)
-    if http_ok:
-        step_security_headers(domain)
-    else:
-        print_subheader("7.5. Security Header Audit")
-        print_skip("Requires functional HTTP response.")
-    
-    # 8. HTTP/3 (Depends on DNS)
-    if dns_ok:
-        step_http3_udp(domain)
-    else:
         print_subheader("8. HTTP/3 (QUIC) Check")
         print_skip("DNS resolution failed.")
-    
-    # 22. WebSocket (Depends on HTTP)
-    if ws_check:
-        if http_ok:
-            step_websocket(domain)
-        else:
-            print_subheader("22. WebSocket Handshake Check")
-            print_skip("Requires functional HTTP.")
-    
-    # 9. SSL (Depends on DNS/TCP)
-    if dns_ok:
-        ssl_ok = step_ssl(domain)
-    else:
         print_subheader("9. SSL/TLS Check")
         print_skip("DNS resolution failed.")
-        
-    # 9.5 OCSP (Depends on SSL)
-    if ssl_ok:
-        step_ocsp(domain)
-    else:
-        print_subheader("9.5 OCSP Stapling Check")
-        print_skip("Requires valid SSL.")
-        
-    # 10. TCP (Depends on DNS)
-    if dns_ok:
-        tcp_ok = step_tcp(domain)
-    else:
         print_subheader("10. TCP Connectivity")
         print_skip("DNS resolution failed.")
-        
-    # 11. MTU (Depends on TCP/Connectivity)
-    if tcp_ok:
-        mtu_ok = step_mtu(domain)
-    else:
         print_subheader("11. MTU Check")
-        print_skip("Requires TCP connectivity.")
+        print_skip("DNS resolution failed.")
+        # No TCP/SSL/HTTP/MTU executed when DNS failed.
+    else:
+        # 2. TCP Connectivity immediately after DNS.
+        tcp_ok = step_tcp(domain)
+
+        if not tcp_ok:
+            # Dependency chain: when TCP fails, higher-level checks are skipped.
+            skip_reason = "SKIPPED (No TCP Connection)"
+
+            print_subheader("7. HTTP/HTTPS Availability")
+            print_skip("SKIPPED (No TCP Connection)")
+            http_res = (skip_reason, 0, False, {})
+
+            print_subheader("9. SSL/TLS Check")
+            print_skip("SKIPPED (No TCP Connection)")
+            ssl_status = skip_reason
+
+            print_subheader("11. MTU Check")
+            print_skip("SKIPPED (No TCP Connection)")
+            mtu_status = skip_reason
+        else:
+            # 7. HTTP Check (Depends on DNS + TCP)
+            http_res = step_http(domain)
+            if http_res[1] > 0:
+                http_ok = True
+
+            # 7.5 Security Headers (Depends on HTTP)
+            if http_ok:
+                step_security_headers(domain)
+            else:
+                print_subheader("7.5. Security Header Audit")
+                print_skip("Requires functional HTTP response.")
+
+            # 8. HTTP/3 (Depends on DNS + TCP)
+            step_http3_udp(domain)
+
+            # 22. WebSocket (Depends on HTTP)
+            if ws_check:
+                if http_ok:
+                    step_websocket(domain)
+                else:
+                    print_subheader("22. WebSocket Handshake Check")
+                    print_skip("Requires functional HTTP.")
+
+            # 9. SSL (Depends on DNS + TCP)
+            ssl_ok = step_ssl(domain)
+            ssl_status = "PASS" if ssl_ok else "FAIL"
+
+            # 9.5 OCSP (Depends on SSL)
+            if ssl_ok:
+                step_ocsp(domain)
+            else:
+                print_subheader("9.5 OCSP Stapling Check")
+                print_skip("Requires valid SSL.")
+
+            # 11. MTU (Depends on TCP/Connectivity)
+            mtu_ok = step_mtu(domain)
+            mtu_status = "PASS" if mtu_ok else "WARN"
         
     # 16. Alt Ports (Depends on failed TCP, so if DNS OK but TCP Fail)
     alt_ports_res = (False, [])
-    if dns_ok and not tcp_ok: 
+    if dns_ok and not tcp_ok:
         alt_ports_res = step_alt_ports(domain)
     
     # 12. Traceroute (Depends on DNS)
     if dns_ok:
         step_traceroute(domain)
-    else:
-        print_subheader("12. Traceroute")
-        print_skip("DNS resolution failed.")
         
     # 13. CF Trace (Depends on HTTP)
     cf_trace_ok = (False, {})
@@ -365,6 +375,8 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
         "dns": prop_status if expected_ns else ("OK" if dns_ok else "FAIL"),
         "http": http_res[0],
         "tcp": "OK" if tcp_ok else "FAIL",
+        "ssl": ssl_status,
+        "mtu": mtu_status,
         "dnssec": dnssec_status,
         "log": log_file,
         "details": {
