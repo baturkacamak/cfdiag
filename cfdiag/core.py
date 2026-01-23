@@ -17,11 +17,11 @@ from .network import (
     step_dnssec, step_domain_status, step_http, step_security_headers,
     step_http3_udp, step_ssl, step_ocsp, step_tcp, step_mtu,
     step_traceroute, step_cf_trace, step_cf_forced, step_origin,
-    step_alt_ports, step_redirects, step_waf_evasion,
-    step_speed, step_dns_benchmark, step_doh, step_graph,
-    step_websocket, detect_cloudflare_usage,
-    get_traceroute_hops, ping_host, run_mtr
+    step_alt_ports, step_waf_evasion,
+    step_speed, step_doh, step_websocket, detect_cloudflare_usage,
+    run_mtr
 )
+from .probes import probe_dns
 from .system import step_lint_config, step_audit
 from .server import run_diagnostic_server
 from .log_analysis import analyze_logs
@@ -217,12 +217,14 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
         l.log_console(f"\n{Colors.BOLD}{Colors.HEADER}DIAGNOSING: {domain}{Colors.ENDC}", force=True)
         l.log_file(f"# DIAGNOSIS: {domain}\nDate: {timestamp}", force=True)
 
+    # Get DNS results first to determine ipv4/ipv6 and dns_ok
+    probe_res = probe_dns(domain)
+    ipv4 = probe_res.get("records", {}).get("A", [])
+    ipv6 = probe_res.get("records", {}).get("AAAA", [])
+    dns_ok = not probe_res.get("error") and (len(ipv4) > 0 or len(ipv6) > 0)
+    
     # 1. Linear Diagnostic Flow
     step_dns(domain)
-    step_http(domain)
-    step_ssl(domain)
-    step_mtu(domain)
-    step_asn(domain)
     
     if doh_check: step_doh(domain)
     
@@ -240,6 +242,7 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     http_res = ("SKIPPED", 0, False, {})
     ssl_status = "N/A"
     mtu_status = "N/A"
+    history_diff = None  # Initialize history_diff
 
     # If DNS failed, skip all downstream network checks entirely.
     if not dns_ok:
@@ -360,11 +363,78 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
         }
     }
 
-def run_diagnostics_wrapper(domain: str, origin: Optional[str], context: Dict[str, Any]) -> Dict[str, Any]:
+def run_diagnostics_wrapper(domain: str, origin: Optional[str], context: Dict[str, Any], expected_ns: Optional[str] = None, export_metrics: bool = False) -> Dict[str, Any]:
     l = FileLogger(verbose=True, silent=False)
     set_logger(l)
     set_context(context)
-    return run_diagnostics(domain, origin)
+    return run_diagnostics(domain, origin, expected_ns, export_metrics=export_metrics)
+
+def interactive_mode() -> None:
+    """Interactive wizard mode for easier usage."""
+    print(f"{Colors.BOLD}{Colors.HEADER}=== cfdiag Interactive Mode ==={Colors.ENDC}\n")
+    
+    # Get domain
+    domain = input(f"{Colors.OKBLUE}Enter domain to diagnose: {Colors.ENDC}").strip()
+    if not domain:
+        print(f"{Colors.FAIL}Domain is required.{Colors.ENDC}")
+        sys.exit(1)
+    
+    domain = domain.replace("http://", "").replace("https://", "").strip("/")
+    
+    # Ask for origin IP
+    origin_input = input(f"{Colors.OKBLUE}Origin IP (optional, press Enter to skip): {Colors.ENDC}").strip()
+    origin = origin_input if origin_input else None
+    
+    # Ask for expected nameserver
+    expect_input = input(f"{Colors.OKBLUE}Expected nameserver substring for propagation check (optional): {Colors.ENDC}").strip()
+    expected_ns = expect_input if expect_input else None
+    
+    # Ask for verbose mode
+    verbose_input = input(f"{Colors.OKBLUE}Enable verbose output? (y/N): {Colors.ENDC}").strip().lower()
+    verbose = verbose_input in ['y', 'yes']
+    
+    # Ask for output format
+    print(f"\n{Colors.OKBLUE}Output format:")
+    print("  1. Standard (default)")
+    print("  2. JSON")
+    print("  3. Markdown")
+    print("  4. JUnit XML")
+    print("  5. All formats{Colors.ENDC}")
+    format_input = input(f"{Colors.OKBLUE}Choose (1-5, default 1): {Colors.ENDC}").strip() or "1"
+    
+    # Ask for advanced options
+    metrics_input = input(f"{Colors.OKBLUE}Export Prometheus metrics? (y/N): {Colors.ENDC}").strip().lower()
+    export_metrics = metrics_input in ['y', 'yes']
+    
+    # Setup context
+    ctx = {
+        'ipv4': False,
+        'ipv6': False,
+        'proxy': None,
+        'keylog_file': None,
+        'headers': None,
+        'timeout': 10
+    }
+    
+    silent = format_input == "2"  # JSON mode is silent
+    l = FileLogger(verbose=verbose, silent=silent)
+    set_logger(l)
+    set_context(ctx)
+    
+    # Run diagnostics
+    result = run_diagnostics(domain, origin, expected_ns, export_metrics=export_metrics)
+    
+    # Save additional formats
+    if format_input in ["3", "5"]:
+        l.save_markdown(os.path.join("reports", domain, f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.md"))
+    if format_input in ["4", "5"]:
+        l.save_junit(os.path.join("reports", domain, "junit.xml"))
+    if format_input == "2":
+        import json
+        print(json.dumps(result, indent=4))
+    else:
+        if not verbose:
+            print(f"\n{Colors.OKGREEN}✓ Diagnostic complete! Reports saved to reports/{domain}/ folder.{Colors.ENDC}")
 
 def generate_completion(shell: str) -> None:
     if shell == "bash":
@@ -375,7 +445,7 @@ _cfdiag()
     COMPREPLY=()
     cur=\"${COMP_WORDS[COMP_CWORD]}\"
     prev=\"${COMP_WORDS[COMP_CWORD-1]}\" 
-    opts=\"--origin --profile --file --verbose --no-color --version --update --ipv4 --ipv6 --proxy --json --completion --grafana --keylog --watch --lint-config --mtr --serve --analyze-logs\"
+    opts=\"--origin --expect --profile --file --threads --ipv4 --ipv6 --proxy --timeout --header --keylog --mtr --watch --json --markdown --junit --metrics --lint-config --analyze-logs --serve --grafana --completion --verbose --no-color --interactive --version --update\"
 
     if [[ ${cur} == -* ]] ; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -392,24 +462,32 @@ _cfdiag() {
     local -a args
     args=(
         '--origin[Direct IP address of origin server]:ip:_hosts'
+        '--expect[Expected nameserver substring for propagation check]:string'
         '--profile[Load profile from config]:string'
         '--file[Batch mode file path]:filename:_files'
-        '--verbose[Enable verbose output]'
-        '--no-color[Disable color output]'
-        '--version[Show version]'
-        '--update[Self-update tool]'
+        '--threads[Number of concurrent threads for batch mode]:int'
         '--ipv4[Force IPv4]'
         '--ipv6[Force IPv6]'
         '--proxy[HTTP Proxy URL]:url'
-        '--json[Output JSON to stdout]'
-        '--completion[Generate shell completion]:(bash zsh)'
-        '--grafana[Generate Grafana Dashboard JSON]'
+        '--timeout[Connection timeout in seconds]:int'
+        '--header[Custom HTTP header]:string'
         '--keylog[SSL Keylog file]:filename:_files'
-        '--watch[Run continuously every 5 seconds]'
-        '--lint-config[Lint web server config file]:filename:_files'
         '--mtr[Run interactive MTR trace]'
-        '--serve[Start diagnostic HTTP server on port]:port'
+        '--watch[Run continuously every 5 seconds]'
+        '--json[Output JSON to stdout]'
+        '--markdown[Generate Markdown report]'
+        '--junit[Generate JUnit XML report]'
+        '--metrics[Export Prometheus metrics]'
+        '--lint-config[Lint web server config file]:filename:_files'
         '--analyze-logs[Analyze web server access logs]:filename:_files'
+        '--serve[Start diagnostic HTTP server on port]:port'
+        '--grafana[Generate Grafana Dashboard JSON]'
+        '--completion[Generate shell completion]:(bash zsh)'
+        '--verbose[Enable verbose output]'
+        '--no-color[Disable color output]'
+        '--interactive[Run in interactive mode]'
+        '--version[Show version]'
+        '--update[Self-update tool]'
     )
     _arguments "${args[@]}"
 }
@@ -420,35 +498,105 @@ _cfdiag() {
 def main() -> None: 
     import json
     
-    parser = argparse.ArgumentParser()
-    parser.add_argument("domain", nargs='?')
-    parser.add_argument("--origin")
-    parser.add_argument("--profile")
-    parser.add_argument("--file")
-    parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument("--no-color", action="store_true")
-    parser.add_argument("--version", action="version", version=f"cfdiag {VERSION}")
-    parser.add_argument("--update", action="store_true")
+    parser = argparse.ArgumentParser(
+        description="Professional-grade diagnostic tool for Cloudflare and connectivity issues.",
+        epilog="""
+Examples:
+  %(prog)s example.com
+  %(prog)s example.com --origin 1.2.3.4
+  %(prog)s --file domains.txt --threads 20
+  %(prog)s example.com --json | jq .
+  %(prog)s --completion bash >> ~/.bashrc
+
+For more information, visit: https://github.com/baturkacamak/cfdiag
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--ipv4", action="store_true", help="Force IPv4")
-    group.add_argument("--ipv6", action="store_true", help="Force IPv6")
-    parser.add_argument("--proxy", help="Use HTTP Proxy (e.g. http://1.2.3.4:8080)")
-    parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
-    parser.add_argument("--completion", choices=['bash', 'zsh'], help="Generate shell completion")
-    parser.add_argument("--grafana", action="store_true", help="Generate Grafana Dashboard JSON")
-    parser.add_argument("--keylog", help="File to save SSL session keys (for Wireshark)")
-    parser.add_argument("--header", action="append", help="Custom HTTP Header (e.g. 'X-Foo: Bar')")
-    parser.add_argument("--timeout", type=int, default=10, help="Connection timeout in seconds")
-    parser.add_argument("--markdown", action="store_true", help="Generate Markdown Report")
-    parser.add_argument("--junit", action="store_true", help="Generate JUnit XML Report")
-    parser.add_argument("--watch", action="store_true", help="Run continuously (every 5s)")
-    parser.add_argument("--lint-config", help="Lint web server configuration file")
-    parser.add_argument("--mtr", action="store_true", help="Run interactive MTR")
-    parser.add_argument("--serve", type=int, nargs='?', const=8080, help="Start diagnostic server (default port 8080)")
-    parser.add_argument("--analyze-logs", help="Analyze access log file")
+    # Core arguments
+    core_group = parser.add_argument_group('Core Options')
+    core_group.add_argument("domain", nargs='?', 
+                           help="Domain name to diagnose (e.g. example.com)")
+    core_group.add_argument("--origin", metavar="IP",
+                           help="Direct IP address of origin server. Bypasses DNS and Cloudflare to test direct connectivity. Essential for verifying if firewall is blocking Cloudflare IPs.")
+    core_group.add_argument("--expect", metavar="NS_SUBSTRING",
+                           help="Check DNS propagation. Verifies if public resolvers return a nameserver matching the provided substring (e.g. 'ns1.digitalocean.com').")
+    core_group.add_argument("--profile", metavar="NAME",
+                           help="Load configuration profile from ~/.cfdiag.json or ./cfdiag.json")
+    
+    # Batch mode
+    batch_group = parser.add_argument_group('Batch Mode')
+    batch_group.add_argument("--file", metavar="FILENAME",
+                            help="Batch mode: Read domains from file (one per line) and scan them in parallel")
+    batch_group.add_argument("--threads", type=int, default=5, metavar="N",
+                            help="Number of concurrent threads for batch mode (default: 5)")
+    
+    # Network options
+    network_group = parser.add_argument_group('Network Options')
+    ip_group = network_group.add_mutually_exclusive_group()
+    ip_group.add_argument("--ipv4", action="store_true",
+                         help="Force all checks (DNS, HTTP, Traceroute) to use IPv4 only")
+    ip_group.add_argument("--ipv6", action="store_true",
+                         help="Force all checks to use IPv6 only")
+    network_group.add_argument("--proxy", metavar="URL",
+                              help="Use HTTP/HTTPS proxy for all web requests (e.g. http://1.2.3.4:8080)")
+    network_group.add_argument("--timeout", type=int, default=10, metavar="SECONDS",
+                              help="Connection timeout in seconds (default: 10)")
+    network_group.add_argument("--header", action="append", metavar="HEADER",
+                              help="Add custom HTTP header (can be used multiple times). Format: 'X-Foo: Bar'")
+    
+    # Advanced diagnostics
+    advanced_group = parser.add_argument_group('Advanced Diagnostics')
+    advanced_group.add_argument("--keylog", metavar="FILE",
+                               help="Save SSL/TLS session keys to file (for Wireshark decryption)")
+    advanced_group.add_argument("--mtr", action="store_true",
+                               help="Run interactive MTR (My Traceroute) with real-time statistics")
+    advanced_group.add_argument("--watch", action="store_true",
+                               help="Run diagnostics continuously, updating every 5 seconds (Ctrl+C to stop)")
+    
+    # Output formats
+    output_group = parser.add_argument_group('Output Formats')
+    output_group.add_argument("--json", action="store_true",
+                             help="Output full diagnostic result as JSON to stdout (suppresses normal logging)")
+    output_group.add_argument("--markdown", action="store_true",
+                             help="Generate Markdown report file in addition to standard reports")
+    output_group.add_argument("--junit", action="store_true",
+                             help="Generate JUnit XML report file (useful for CI/CD integration)")
+    output_group.add_argument("--metrics", action="store_true",
+                             help="Export Prometheus-compatible metrics file")
+    
+    # Utility commands
+    utility_group = parser.add_argument_group('Utility Commands')
+    utility_group.add_argument("--lint-config", metavar="FILE",
+                              help="Lint web server configuration file (nginx.conf, apache.conf, etc.) for Cloudflare Real IP directives")
+    utility_group.add_argument("--analyze-logs", metavar="FILE",
+                              help="Analyze web server access log file for common error patterns")
+    utility_group.add_argument("--serve", type=int, nargs='?', const=8080, metavar="PORT",
+                               help="Start diagnostic HTTP server on specified port (default: 8080)")
+    utility_group.add_argument("--grafana", action="store_true",
+                              help="Generate Grafana Dashboard JSON configuration")
+    utility_group.add_argument("--completion", choices=['bash', 'zsh'], metavar="SHELL",
+                              help="Generate shell completion script for bash or zsh")
+    
+    # General options
+    general_group = parser.add_argument_group('General Options')
+    general_group.add_argument("--verbose", "-v", action="store_true",
+                              help="Enable verbose output. Shows full command outputs and detailed diagnostic information")
+    general_group.add_argument("--no-color", action="store_true",
+                              help="Disable colored output (useful for scripts or terminals without color support)")
+    general_group.add_argument("--interactive", "-i", action="store_true",
+                              help="Run in interactive mode - guided wizard for easier usage")
+    general_group.add_argument("--version", action="version", version=f"cfdiag {VERSION}",
+                              help="Show version number and exit")
+    general_group.add_argument("--update", action="store_true",
+                              help="Check for updates and display latest version information")
     
     args = parser.parse_args()
+    
+    # Handle interactive mode early
+    if args.interactive:
+        interactive_mode()
+        return
     
     if args.update: self_update(); return
     if args.no_color: Colors.disable()
@@ -461,6 +609,7 @@ def main() -> None:
     config = load_config(args.profile)
     domain = args.domain or config.get("domain")
     origin = args.origin or config.get("origin")
+    expected_ns = args.expect or config.get("expect")
 
     if not domain and not args.file: parser.print_help(); sys.exit(1)
     if not check_internet_connection(): print("No Internet."); sys.exit(1)
@@ -487,7 +636,7 @@ def main() -> None:
         print(f"\n{Colors.BOLD}{Colors.HEADER}=== BATCH MODE STARTED ({len(domains)} domains, {args.threads} threads) ==={Colors.ENDC}\n")
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
-            futures = {executor.submit(run_diagnostics_wrapper, d, origin, ctx): d for d in domains}
+            futures = {executor.submit(run_diagnostics_wrapper, d, origin, ctx, expected_ns, args.metrics): d for d in domains}
             for future in concurrent.futures.as_completed(futures):
                 try:
                     res = future.result()
@@ -517,13 +666,23 @@ def main() -> None:
                     l = FileLogger(verbose=args.verbose, silent=silent)
                     set_logger(l)
                     
-                    result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin)
+                    result = run_diagnostics(
+                        domain.replace("http://", "").replace("https://", "").strip("/"),
+                        origin,
+                        expected_ns,
+                        export_metrics=args.metrics
+                    )
                     time.sleep(5)
             except KeyboardInterrupt:
                 print("\nStopped.")
                 sys.exit(0)
         else:
-            result = run_diagnostics(domain.replace("http://", "").replace("https://", "").strip("/"), origin)
+            result = run_diagnostics(
+                domain.replace("http://", "").replace("https://", "").strip("/"),
+                origin,
+                expected_ns,
+                export_metrics=args.metrics
+            )
             
             if args.markdown:
                 l.save_markdown(os.path.join("reports", domain, f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.md"))

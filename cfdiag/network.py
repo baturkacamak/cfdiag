@@ -9,7 +9,7 @@ import json
 import os
 import time
 import ipaddress
-from typing import Tuple, List, Dict, Optional
+from typing import Tuple, List, Dict, Optional, Any
 
 import certifi
 
@@ -703,7 +703,6 @@ def step_cache_headers(http_output: str) -> None:
             k, v = line.split(':', 1)
             headers[k.lower().strip()] = v.strip()
     
-    headers = probe_res.get("headers", {})
     cache_status = headers.get('cf-cache-status', 'MISSING')
     server = headers.get('server', '').lower()
     if 'cloudflare' in server:
@@ -711,14 +710,6 @@ def step_cache_headers(http_output: str) -> None:
             print_info(f"Cache Status: {Colors.WHITE}{cache_status}{Colors.ENDC}")
         elif cache_status == 'MISSING':
             print_warning("Cloudflare active but 'cf-cache-status' header missing.")
-    
-    # Standardize Status Strings for HTML
-    res_str = "FAIL"
-    if analysis["status"] == Severity.PASS: res_str = "PASS"
-    elif analysis["status"] == Severity.INFO: res_str = "INFO"
-    elif analysis["status"] == Severity.WARNING: res_str = "WARN"
-    
-    if l: l.add_html_step("HTTP", res_str, analysis["human_reason"])
 
 def step_ssl(domain: str) -> None: 
     print_subheader("9. SSL/TLS Check")
@@ -733,6 +724,7 @@ def step_ssl(domain: str) -> None:
     probe_res = probe_tls(domain, timeout=timeout, keylog_file=keylog)
     analysis = analyze_tls(probe_res)
     
+    l = get_logger()
     if l: l.log_file(f"Probe TLS: {probe_res}")
     
     if analysis["status"] == Severity.PASS:
@@ -886,6 +878,157 @@ def _ping_host(host: str) -> float:
         m = re.search(r'time[=<]([\d\.]+)', out)
         if m: return float(m.group(1))
     return -1.0
+
+def step_security_headers(domain: str) -> None:
+    """Check security headers (CSP, HSTS, etc.)"""
+    print_subheader("7.5. Security Header Audit")
+    l = get_logger()
+    flags = get_curl_flags()
+    cmd = f"curl{flags} -I -s --connect-timeout 10 https://{domain}"
+    code, output = run_command(cmd, show_output=False, log_output_to_file=True)
+    
+    headers = {}
+    for line in output.splitlines():
+        if ':' in line:
+            k, v = line.split(':', 1)
+            headers[k.strip().lower()] = v.strip()
+    
+    security_headers = {
+        'strict-transport-security': 'HSTS',
+        'content-security-policy': 'CSP',
+        'x-frame-options': 'X-Frame-Options',
+        'x-content-type-options': 'X-Content-Type-Options',
+        'referrer-policy': 'Referrer-Policy'
+    }
+    
+    found = []
+    for header, name in security_headers.items():
+        if header in headers:
+            found.append(name)
+    
+    if found:
+        print_success(f"Security Headers: {', '.join(found)}")
+        if l: l.add_html_step("Security Headers", "PASS", f"Found: {', '.join(found)}")
+    else:
+        print_warning("No security headers found")
+        if l: l.add_html_step("Security Headers", "WARN", "No security headers detected")
+
+def step_http3_udp(domain: str) -> None:
+    """Check HTTP/3 (QUIC) support"""
+    print_subheader("8. HTTP/3 (QUIC) Check")
+    print_info("HTTP/3 check not yet fully implemented")
+    l = get_logger()
+    if l: l.add_html_step("HTTP/3", "INFO", "Check not implemented")
+
+def step_ocsp(domain: str) -> None:
+    """Check OCSP stapling"""
+    print_subheader("9.5 OCSP Stapling Check")
+    l = get_logger()
+    probe_res = probe_tls(domain)
+    if probe_res.get("ocsp_stapled"):
+        print_success("OCSP Stapling: Enabled")
+        if l: l.add_html_step("OCSP", "PASS", "OCSP Stapling enabled")
+    else:
+        print_info("OCSP Stapling: Not enabled")
+        if l: l.add_html_step("OCSP", "INFO", "OCSP Stapling not enabled")
+
+def step_tcp(domain: str) -> bool:
+    """Check TCP connectivity"""
+    print_subheader("10. TCP Connectivity")
+    l = get_logger()
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        result = sock.connect_ex((domain, 443))
+        sock.close()
+        if result == 0:
+            print_success("TCP Port 443: Open")
+            if l: l.add_html_step("TCP", "PASS", "Port 443 open")
+            return True
+        else:
+            print_fail("TCP Port 443: Closed or filtered")
+            if l: l.add_html_step("TCP", "FAIL", "Port 443 closed")
+            return False
+    except Exception as e:
+        print_fail(f"TCP Check failed: {e}")
+        if l: l.add_html_step("TCP", "FAIL", str(e))
+        return False
+
+def step_traceroute(domain: str) -> None:
+    """Run traceroute"""
+    print_subheader("12. Traceroute")
+    l = get_logger()
+    trace_cmd = "tracert" if os.name == 'nt' else "traceroute"
+    if not shutil.which(trace_cmd):
+        print_info("Traceroute not available")
+        return
+    
+    flags = get_curl_flags()
+    from .utils import get_context
+    ctx = get_context()
+    if ctx.get('ipv4'): flags += " -4"
+    if ctx.get('ipv6'): flags += " -6"
+    
+    cmd = f"{trace_cmd} {domain}"
+    code, output = run_command(cmd, timeout=30, log_output_to_file=True)
+    if l: l.log_file(f"Traceroute output:\n{output}")
+
+def step_cf_trace(domain: str) -> Tuple[bool, Dict[str, Any]]:
+    """Check Cloudflare trace endpoint"""
+    print_subheader("13. CF Trace")
+    l = get_logger()
+    flags = get_curl_flags()
+    cmd = f"curl{flags} -s --connect-timeout 5 https://{domain}/cdn-cgi/trace"
+    code, output = run_command(cmd, show_output=False, log_output_to_file=True)
+    
+    if code == 0 and output.strip():
+        print_success("CF Trace: Available")
+        if l: l.add_html_step("CF Trace", "PASS", "Trace endpoint accessible")
+        return True, {}
+    else:
+        print_info("CF Trace: Not available (not using Cloudflare or endpoint blocked)")
+        if l: l.add_html_step("CF Trace", "INFO", "Trace endpoint not accessible")
+        return False, {}
+
+def step_cf_forced(domain: str) -> bool:
+    """Check if forced to use Cloudflare"""
+    print_subheader("14. CF Forced Check")
+    # This is an environment check, not a network check
+    return False
+
+def step_alt_ports(domain: str) -> Tuple[bool, List[int]]:
+    """Check alternative ports"""
+    print_subheader("16. Alternative Ports")
+    l = get_logger()
+    alt_ports = [8080, 8443, 8081]
+    open_ports = []
+    
+    for port in alt_ports:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex((domain, port))
+            sock.close()
+            if result == 0:
+                open_ports.append(port)
+        except:
+            pass
+    
+    if open_ports:
+        print_success(f"Alternative ports open: {', '.join(map(str, open_ports))}")
+        if l: l.add_html_step("Alt Ports", "PASS", f"Open: {open_ports}")
+        return True, open_ports
+    else:
+        print_info("No alternative ports open")
+        if l: l.add_html_step("Alt Ports", "INFO", "No alternative ports")
+        return False, []
+
+def step_doh(domain: str) -> None:
+    """Check DNS over HTTPS"""
+    print_subheader("DNS over HTTPS Check")
+    l = get_logger()
+    print_info("DoH check not yet fully implemented")
+    if l: l.add_html_step("DoH", "INFO", "Check not implemented")
 
 def step_websocket(domain: str, path: str = "/") -> None: # Feature: WebSocket Handshake
     print_subheader("22. WebSocket Handshake Check")

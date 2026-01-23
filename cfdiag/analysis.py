@@ -72,7 +72,7 @@ def analyze_http(probe: ProbeHTTPResult) -> AnalysisResult:
 
     # 2. Redirects
     if code in [301, 302, 303, 307, 308]:
-         return _res(Severity.WARNING, "HTTP_REDIRECT", "Redirect limit reached or loop detected.", meta,
+         return _res(Severity.WARN, "HTTP_REDIRECT", "Redirect limit reached or loop detected.", meta,
                     ["Check for redirect loops"])
 
     # 3. Rate Limits
@@ -89,7 +89,7 @@ def analyze_http(probe: ProbeHTTPResult) -> AnalysisResult:
     
     # 5. Client Errors
     if 400 <= code < 500:
-        return _res(Severity.WARNING, "HTTP_CLIENT_ERROR", f"Client Error (HTTP {code}).", meta,
+        return _res(Severity.WARN, "HTTP_CLIENT_ERROR", f"Client Error (HTTP {code}).", meta,
                    ["Check URL path", "Check permissions"])
                    
     # 6. Server Errors
@@ -97,7 +97,7 @@ def analyze_http(probe: ProbeHTTPResult) -> AnalysisResult:
         return _res(Severity.ERROR, "HTTP_SERVER_ERROR", f"Server Error (HTTP {code}).", meta,
                    ["Check server logs", "Check upstream"])
 
-    return _res(Severity.WARNING, "UNKNOWN", f"Unexpected status: {code}", meta)
+        return _res(Severity.WARN, "UNKNOWN", f"Unexpected status: {code}", meta)
 
 def analyze_tls(probe: ProbeTLSResult) -> AnalysisResult:
     meta = {
@@ -126,7 +126,7 @@ def analyze_tls(probe: ProbeTLSResult) -> AnalysisResult:
                    ["Renew certificate", "Fix chain of trust"])
                    
     if probe["protocol_version"] and probe["protocol_version"] < "TLSv1.2":
-        return _res(Severity.WARNING, "TLS_OLD_PROTOCOL", 
+        return _res(Severity.WARN, "TLS_OLD_PROTOCOL", 
                    f"Deprecated Protocol: {probe['protocol_version']}", meta,
                    ["Upgrade to TLS 1.2 or 1.3"])
                    
@@ -137,14 +137,14 @@ def analyze_mtu(probe: ProbeMTUResult) -> AnalysisResult:
     meta = {"mtu": mtu, "lost": probe["packets_lost"]}
     
     if mtu == 0:
-        return _res(Severity.WARNING, "MTU_WARNING", "Could not determine MTU (ICMP blocked?).", meta)
+        return _res(Severity.WARN, "MTU_WARNING", "Could not determine MTU (ICMP blocked?).", meta)
         
     if mtu < 1280:
         return _res(Severity.CRITICAL, "MTU_CRITICAL", f"Path MTU {mtu} < 1280 (IPv6 Min).", meta,
                    ["Check VPN/Tunnels", "Fix fragmentation issues"])
                    
     if mtu < 1500:
-        return _res(Severity.WARNING, "MTU_WARNING", f"Path MTU {mtu} < 1500.", meta,
+        return _res(Severity.WARN, "MTU_WARNING", f"Path MTU {mtu} < 1500.", meta,
                    ["Check for MSS clamping", "Check overhead"])
                    
     return _res(Severity.PASS, "MTU_PASS", "MTU 1500 OK.", meta)
@@ -166,7 +166,7 @@ def analyze_origin_reachability(edge: ProbeHTTPResult, origin: ProbeHTTPResult) 
         return _res(Severity.CRITICAL, "ORIGIN_UNREACHABLE", f"Origin Unreachable: {err}", meta)
 
     if edge_cf_error and origin_ok:
-        return _res(Severity.WARNING, "ORIGIN_FIREWALL_BLOCK", 
+        return _res(Severity.WARN, "ORIGIN_FIREWALL_BLOCK", 
                    "Origin is UP, but Cloudflare cannot reach it (Firewall likely).", meta,
                    ["Whitelist Cloudflare IPs"])
                    
@@ -179,7 +179,7 @@ def analyze_asn(probe: ProbeASNResult) -> AnalysisResult:
     meta = {"asn": probe["asn"], "country": probe["country"]}
     
     if probe["error"]:
-        return _res(Severity.WARNING, "ASN_LOOKUP_FAIL", f"ASN Lookup failed: {probe['error']}", meta)
+        return _res(Severity.WARN, "ASN_LOOKUP_FAIL", f"ASN Lookup failed: {probe['error']}", meta)
         
     if probe["asn"]:
         return _res(Severity.PASS, "ASN_FOUND", f"AS{probe['asn']} ({probe['country']})", meta)
