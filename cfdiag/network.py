@@ -184,7 +184,7 @@ def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
     if analysis["status"] == Severity.PASS:
         print_success(f"ASN Info: {Colors.WHITE}{analysis['human_reason']}{Colors.ENDC}")
         if l: l.log_file(f"ASN: {analysis['human_reason']}")
-    elif analysis["status"] == Severity.WARNING:
+    elif analysis["status"] == Severity.WARN:
         if l: l.log_file(f"ASN Check: {analysis['human_reason']}")
     
     status_str = "PASS" if analysis["status"] == Severity.PASS else "WARN"
@@ -745,11 +745,12 @@ def step_mtu(domain: str) -> None:
     if analysis["status"] == Severity.PASS:
         print_success(f"{analysis['human_reason']}")
         if l: l.add_html_step("MTU", "PASS", analysis['human_reason'])
-    elif analysis["status"] in [Severity.WARNING, Severity.CRITICAL]:
+    elif analysis["status"] in [Severity.WARN, Severity.CRITICAL]:
         print_warning(f"{analysis['human_reason']}")
         if l: l.add_html_step("MTU", "WARN", analysis["human_reason"])
     else:
         print_warning("MTU Check failed or blocked.")
+        if l: l.add_html_step("MTU", "WARN", "MTU Check failed or blocked.")
 
 def step_origin(domain: str, ip: str) -> None:
     print_subheader(f"15. Direct Origin Check ({ip})")

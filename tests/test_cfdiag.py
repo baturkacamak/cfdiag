@@ -55,6 +55,7 @@ class TestReporting(unittest.TestCase):
 
     def test_log_console(self):
         captured = io.StringIO()
+        self.logger.verbose = True  # Enable verbose mode so log_console actually prints
         with patch('sys.stdout', captured):
             self.logger.log_console("test")
         self.assertIn("test", captured.getvalue())
@@ -63,13 +64,15 @@ class TestReporting(unittest.TestCase):
         self.logger.log_file("test log")
         with patch('builtins.open', mock_open()) as m:
             self.logger.save_to_file("out.txt")
-            m().write.assert_called_with("test log\n")
+            handle = m.return_value.__enter__.return_value
+            handle.write.assert_called_with("test log\n")
 
     def test_save_html(self):
         self.logger.html_data['steps'].append({"title": "DNS", "status": "PASS", "details": "ok"})
         with patch('builtins.open', mock_open()) as m:
             self.logger.save_html("out.html")
-            handle = m()
+            handle = m.return_value.__enter__.return_value
+            self.assertTrue(handle.write.called)
             args = handle.write.call_args[0][0]
             self.assertIn("DNS", args)
             self.assertIn("PASS", args)
@@ -78,14 +81,18 @@ class TestReporting(unittest.TestCase):
         self.logger.html_data['steps'].append({"title": "DNS", "status": "PASS", "details": "ok"})
         with patch('builtins.open', mock_open()) as m:
             self.logger.save_markdown("out.md")
-            args = m().write.call_args[0][0]
+            handle = m.return_value.__enter__.return_value
+            self.assertTrue(handle.write.called)
+            args = handle.write.call_args[0][0]
             self.assertIn("### [PASS] DNS", args)
 
     def test_save_junit(self):
         self.logger.html_data['steps'].append({"title": "DNS", "status": "FAIL", "details": "timeout"})
         with patch('builtins.open', mock_open()) as m:
             self.logger.save_junit("out.xml")
-            args = m().write.call_args[0][0]
+            handle = m.return_value.__enter__.return_value
+            self.assertTrue(handle.write.called)
+            args = handle.write.call_args[0][0]
             self.assertIn('<failure message="FAIL">timeout</failure>', args)
 
     @patch('cfdiag.reporting.urllib.request.urlopen')
@@ -251,8 +258,7 @@ class TestCoreCLI(unittest.TestCase):
             patch('cfdiag.core.analyze_logs'),
             patch('cfdiag.network.step_mtu', return_value=None),
             patch('cfdiag.core.step_ssl', return_value=None),
-            patch('cfdiag.core.step_origin', return_value=None),
-            patch('cfdiag.core.step_asn', return_value=None)
+            patch('cfdiag.core.step_origin', return_value=None)
         ]
         for p in self.patchers: p.start()
 
