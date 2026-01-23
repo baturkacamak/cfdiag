@@ -20,7 +20,7 @@ from .network import (
     step_traceroute, step_cf_trace, step_cf_forced, step_origin,
     step_alt_ports, step_redirects, step_waf_evasion,
     step_speed, step_dns_benchmark, step_doh, step_graph,
-    step_websocket,
+    step_websocket, detect_cloudflare_usage,
     get_traceroute_hops, ping_host, run_mtr
 )
 from .system import step_lint_config, step_audit
@@ -164,8 +164,24 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
                  l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} Direct Origin Connection TIMED OUT.", file_msg="[CRITICAL] Direct Origin Connection TIMED OUT.", force=True)
                  l.log(f"{Colors.FAIL}{Colors.BOLD}[DIAGNOSIS]{Colors.ENDC} Origin Server is DOWN or Unreachable.", file_msg="[DIAGNOSIS] Origin Server is DOWN or Unreachable.", force=True)
 
-    if cf_res or cf_trace_res[0]:
+    # Cloudflare usage detection based on resolved IPs and NS records.
+    # Only report Cloudflare Edge as reachable if target actually uses Cloudflare.
+    cloudflare_in_use = False
+    try:
+        cloudflare_in_use = detect_cloudflare_usage(domain, ipv4 or [], ipv6 or [])
+    except Exception:
+        cloudflare_in_use = False
+
+    # cf_trace_res[0] is True if /cdn-cgi/trace responded, which is a strong Cloudflare signal.
+    if cloudflare_in_use or cf_trace_res[0]:
         l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Cloudflare Edge Network is reachable.", file_msg="[PASS] Cloudflare Edge Network is reachable.", force=True)
+    else:
+        # No Cloudflare IP/NS match detected – make this explicit in the report.
+        l.log(
+            f"{Colors.OKBLUE}{Colors.BOLD}[INFO]{Colors.ENDC} Target is NOT using Cloudflare (Direct/Third-party hosting detected).",
+            file_msg="[INFO] Target is NOT using Cloudflare (Direct/Third-party hosting detected).",
+            force=True,
+        )
 
     if history_diff:
         l.log_file("\n-- History Comparison --")

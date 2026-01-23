@@ -8,8 +8,9 @@ import re
 import json
 import os
 import time
+import ipaddress
 from typing import Tuple, List, Dict, Optional
-from .utils import get_curl_flags, PUBLIC_RESOLVERS, DNSBL_LIST, USER_AGENTS, console_lock, Colors
+from .utils import get_curl_flags, PUBLIC_RESOLVERS, DNSBL_LIST, USER_AGENTS, console_lock, Colors, CLOUDFLARE_IPS
 from .reporting import (
     get_logger, print_header, print_subheader, print_success, 
     print_fail, print_info, print_warning, print_cmd
@@ -67,6 +68,56 @@ def check_internet_connection() -> bool:
         try:
             with socket.create_connection((host, port), timeout=3): return True
         except: continue
+    return False
+
+def _ip_in_cidr_ranges(ip: str, ranges: List[str]) -> bool:
+    """
+    Check if a given IP address (v4 or v6) falls within any CIDR range in `ranges`.
+    """
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    
+    for cidr in ranges:
+        try:
+            network = ipaddress.ip_network(cidr, strict=False)
+        except ValueError:
+            continue
+        if ip_obj in network:
+            return True
+    return False
+
+def detect_cloudflare_usage(domain: str, ipv4: List[str], ipv6: List[str]) -> bool:
+    """
+    Determine whether the target is using Cloudflare based on:
+      1) Resolved A/AAAA records falling into known Cloudflare IP ranges.
+      2) NS records containing 'cloudflare.com'.
+    """
+    # 1. IP range check (A/AAAA records)
+    for ip in ipv4 + ipv6:
+        # Skip obvious private / loopback ranges – they are never Cloudflare edges.
+        if ip.startswith(("192.168.", "10.", "127.", "::1")):
+            continue
+        if _ip_in_cidr_ranges(ip, CLOUDFLARE_IPS):
+            return True
+
+    # 2. NS record check for "cloudflare.com"
+    ns_output = ""
+    cmd = ""
+    if shutil.which("dig"):
+        cmd = f"dig NS {domain} +short"
+    elif os.name == 'nt':
+        cmd = f"nslookup -type=NS {domain}"
+
+    if cmd:
+        code, out = run_command(cmd, show_output=False, log_output_to_file=True)
+        if code == 0:
+            ns_output = out.lower()
+
+    if "cloudflare.com" in ns_output:
+        return True
+
     return False
 
 def step_dns(domain: str) -> Tuple[bool, List[str], List[str]]:
