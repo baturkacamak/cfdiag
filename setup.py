@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="cfdiag",
-    version="3.12.4",
+    version="3.12.5",
     description="A professional-grade diagnostic tool for Cloudflare and connectivity issues.",
     author="Batur Kacamak",
     author_email="batur@example.com",

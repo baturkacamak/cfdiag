@@ -2,7 +2,7 @@ import os
 import threading
 from typing import Dict, Any
 
-VERSION = "3.12.4"
+VERSION = "3.12.6"
 SEPARATOR = "=" * 60
 SUB_SEPARATOR = "-" * 60
 REPO_URL = "https://raw.githubusercontent.com/baturkacamak/cfdiag/main/cfdiag.py"

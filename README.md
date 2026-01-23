@@ -47,6 +47,19 @@ docker build -t cfdiag .
 docker run --rm cfdiag example.com
 ```
 
+### Development Setup
+For developers contributing to the project:
+```bash
+git clone https://github.com/baturkacamak/cfdiag.git
+cd cfdiag
+./setup_dev.sh
+```
+
+This will:
+- Install git hooks (pre-commit tests, pre-push version check)
+- Make all scripts executable
+- Set up the development environment
+
 ## Usage
 
 ### Basic Usage
@@ -78,6 +91,31 @@ cfdiag example.com --mtr
 ```bash
 cfdiag example.com --json | jq .
 ```
+
+## Development
+
+### Creating a New Release
+
+When creating a new release tag, use the provided script to automatically update version numbers:
+
+```bash
+./scripts/create_tag.sh v3.12.6 "Release message here"
+```
+
+This script will:
+- Update `VERSION` in `cfdiag/utils.py` and `setup.py`
+- Create a commit with the version update
+- Create the git tag with your message
+- Ensure version consistency
+
+**Important:** Always use the script instead of manually creating tags to ensure version consistency.
+
+### Version Consistency Checks
+
+The project includes automatic checks to ensure version consistency:
+- **Pre-push hook**: Warns if tag version doesn't match code version
+- **GitHub Actions**: Automatically checks version consistency on tag pushes
+- **Manual check**: Run `./scripts/check_version_tag.sh` anytime
 
 ## License
 MIT

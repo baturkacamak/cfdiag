@@ -1,0 +1,47 @@
+name: Version Check
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'cfdiag/utils.py'
+      - 'setup.py'
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for tags
+      
+      - name: Get latest tag
+        id: tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No tags found, skipping check"
+            exit 0
+          fi
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "version=${LATEST_TAG#v}" >> $GITHUB_OUTPUT
+      
+      - name: Get code version
+        id: code
+        run: |
+          CODE_VERSION=$(grep -E '^VERSION = "' cfdiag/utils.py | sed 's/VERSION = "\(.*\)"/\1/')
+          echo "version=$CODE_VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Check version consistency
+        if: steps.tag.outputs.tag != ''
+        run: |
+          if [ "${{ steps.tag.outputs.version }}" != "${{ steps.code.outputs.version }}" ]; then
+            echo "❌ Version mismatch!"
+            echo "   Tag version: ${{ steps.tag.outputs.version }}"
+            echo "   Code version: ${{ steps.code.outputs.version }}"
+            exit 1
+          else
+            echo "✅ Versions match!"
+          fi
