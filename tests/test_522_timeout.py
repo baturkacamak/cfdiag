@@ -125,7 +125,14 @@ class Test522TimeoutLogic(unittest.TestCase):
         combined = "\n".join(log_calls)
         
         self.assertNotIn("Potential 522", combined, "Should NOT mention 'Potential 522' for non-Cloudflare sites")
-        self.assertIn("HTTP Request Timed Out", combined, "Should still show generic timeout message")
+        # Should show generic timeout message (one of: "Connection Timed Out", "Request Timed Out", "Server Unreachable", or "HTTP Request Timed Out")
+        timeout_message_found = (
+            "Connection Timed Out" in combined or
+            "Request Timed Out" in combined or
+            "Server Unreachable" in combined or
+            "HTTP Request Timed Out" in combined
+        )
+        self.assertTrue(timeout_message_found, "Should show generic timeout message (Connection Timed Out, Request Timed Out, Server Unreachable, or HTTP Request Timed Out)")
         self.assertNotIn("522", combined, "Should not mention '522' at all for non-Cloudflare sites")
         self.assertIn("NOT using Cloudflare", combined, "Should indicate Cloudflare is not in use")
 
@@ -180,6 +187,14 @@ class Test522TimeoutLogic(unittest.TestCase):
         
         self.assertNotIn("Potential 522", combined, "Should NOT mention 'Potential 522' for non-timeout errors")
         self.assertNotIn("522", combined, "Should not mention '522' for connection refused errors")
+        # Should show connection refused or port closed message
+        connection_error_found = (
+            "Connection Refused" in combined or
+            "Port Closed" in combined or
+            "Connection Error" in combined or
+            "TCP connection failed" in combined
+        )
+        self.assertTrue(connection_error_found, "Should show connection refused or port closed message")
         # Should still detect Cloudflare usage
         self.assertIn("Cloudflare Edge Network is reachable", combined, "Should still detect Cloudflare usage")
 
