@@ -279,6 +279,8 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
         else:
             # 7. HTTP Check (Depends on DNS + TCP)
             http_res = step_http(domain)
+            if http_res is None:
+                http_res = ("ERROR", 0, False, {})
             if http_res[1] > 0:
                 http_ok = True
 
