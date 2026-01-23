@@ -55,8 +55,33 @@ def run_command(command: str, timeout: int = 30, show_output: bool = True, log_o
 
         if log_output_to_file and l:
              if full_output.strip():
-                 l.log_file("Output:")
-                 l.log_file(textwrap.indent(full_output, '    '))
+                 # Check if output is HTML from remote domain (don't log full HTML content)
+                 output_lower = full_output.strip().lower()
+                 is_html = (
+                     output_lower.startswith('<!doctype html') or
+                     output_lower.startswith('<html') or
+                     (output_lower.startswith('<!') and '<html' in output_lower[:500])
+                 )
+                 
+                 # If it's HTML and comes from a curl command to remote domain, don't log the full HTML
+                 # Exclude localhost, 127.0.0.1, and local IPs from filtering
+                 command_lower = command.lower()
+                 is_remote_curl = (
+                     'curl' in command_lower and 
+                     ('http://' in command_lower or 'https://' in command_lower) and
+                     'localhost' not in command_lower and
+                     '127.0.0.1' not in command_lower and
+                     '::1' not in command_lower
+                 )
+                 
+                 if is_html and is_remote_curl:
+                     # Log a summary instead of full HTML
+                     html_size = len(full_output)
+                     l.log_file("Output:")
+                     l.log_file(f"    [HTML Response from remote domain - {html_size} bytes - content excluded from report]")
+                 else:
+                     l.log_file("Output:")
+                     l.log_file(textwrap.indent(full_output, '    '))
              if exit_code != 0:
                  l.log_file(f"[ERROR] Command failed with exit code {exit_code}")
 
