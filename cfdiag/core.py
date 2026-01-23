@@ -101,6 +101,9 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
     l.log_file(f" DIAGNOSTIC SUMMARY", force=True)
     l.log_file(f"{SEPARATOR}", force=True)
     
+    # Initialize Cloudflare detection variable (used later for timeout message and summary)
+    cloudflare_in_use = False
+    
     dns_ok, ipv4, ipv6 = dns_res
     if not dns_ok:
         l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} DNS Resolution failed.", file_msg="[CRITICAL] DNS Resolution failed.", force=True)
@@ -135,6 +138,12 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
         else:
              l.log(f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} MTU/Fragmentation issue.", file_msg="[WARN] MTU/Fragmentation issue.", force=True)
 
+        # Check Cloudflare usage before HTTP status evaluation (needed for timeout message)
+        try:
+            cloudflare_in_use = detect_cloudflare_usage(domain, ipv4 or [], ipv6 or [])
+        except Exception:
+            cloudflare_in_use = False
+
         http_status, http_code, is_waf, metrics = http_res
         if http_status == "SUCCESS":
             l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} HTTP requests are working (Code {http_code}).", file_msg=f"[PASS] HTTP requests are working (Code {http_code}).", force=True)
@@ -145,11 +154,15 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
         elif http_status == "SERVER_ERROR":
              l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} Server returned Error (Code {http_code}).", file_msg=f"[CRITICAL] Server returned Error (Code {http_code}).", force=True)
              if http_code == 522:
-                 l.log(f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 522: Connection Timed Out to Origin.", file_msg="[ALERT] Cloudflare 522: Connection Timed Out to Origin.", force=True)
+                l.log(f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 522: Connection Timed Out to Origin.", file_msg="[ALERT] Cloudflare 522: Connection Timed Out to Origin.", force=True)
              elif http_code == 525:
-                 l.log(f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 525: SSL Handshake Failed with Origin.", file_msg="[ALERT] Cloudflare 525: SSL Handshake Failed with Origin.", force=True)
+                l.log(f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 525: SSL Handshake Failed with Origin.", file_msg="[ALERT] Cloudflare 525: SSL Handshake Failed with Origin.", force=True)
         elif http_status == "TIMEOUT":
-            l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} HTTP Request Timed Out (Potential 522).", file_msg="[CRITICAL] HTTP Request Timed Out (Potential 522).", force=True)
+            # Only mention "Potential 522" if Cloudflare is actually in use
+            if cloudflare_in_use or cf_trace_res[0]:
+                l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} HTTP Request Timed Out (Potential 522).", file_msg="[CRITICAL] HTTP Request Timed Out (Potential 522).", force=True)
+            else:
+                l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} HTTP Request Timed Out.", file_msg="[CRITICAL] HTTP Request Timed Out.", force=True)
         elif http_status == "SKIPPED":
              l.log(f"{Colors.GREY}[SKIP] HTTP Check skipped.", file_msg="[SKIP] HTTP Check skipped.", force=True)
 
@@ -166,12 +179,7 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
 
     # Cloudflare usage detection based on resolved IPs and NS records.
     # Only report Cloudflare Edge as reachable if target actually uses Cloudflare.
-    cloudflare_in_use = False
-    try:
-        cloudflare_in_use = detect_cloudflare_usage(domain, ipv4 or [], ipv6 or [])
-    except Exception:
-        cloudflare_in_use = False
-
+    # Note: cloudflare_in_use is already calculated above (before HTTP status check) for timeout message logic.
     # cf_trace_res[0] is True if /cdn-cgi/trace responded, which is a strong Cloudflare signal.
     if cloudflare_in_use or cf_trace_res[0]:
         l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Cloudflare Edge Network is reachable.", file_msg="[PASS] Cloudflare Edge Network is reachable.", force=True)
