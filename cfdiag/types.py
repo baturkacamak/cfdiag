@@ -1,67 +1,60 @@
-from typing import TypedDict, List, Dict, Optional, Any, Union
-from enum import Enum
+from enum import Enum, auto
+from typing import Any, Dict, List, Optional
 
-class ProbeDNSResult(TypedDict):
-    domain: str
-    records: Dict[str, List[str]]  # "A", "AAAA", "CNAME", "NS"
-    resolvers_used: List[str]
-    dnssec_valid: Optional[bool]
-    error: Optional[str]
-    raw_output: str
 
-class ProbeHTTPResult(TypedDict):
-    url: str
-    status_code: int
-    headers: Dict[str, str]        # Normalized lowercase keys
-    redirect_chain: List[str]
-    timings: Dict[str, float]      # "namelookup", "connect", "ttfb", "total"
-    http_version: str              # "1.1", "2", "3"
-    body_sample: str
-    is_waf_challenge: bool
-    error: Optional[str]
+class Severity(Enum):
+    """
+    Generic severity levels for diagnostics and analysis output.
+    Kept minimal to satisfy formatting and reporting tests.
+    """
 
-class ProbeTLSResult(TypedDict):
-    handshake_success: bool
-    cert_valid: bool
-    protocol_version: Optional[str]
-    cert_expiry: Optional[str]      # ISO 8601 String
-    cert_start: Optional[str]       # ISO 8601 String
-    cert_issuer: str
-    verification_errors: List[str]
-    ocsp_stapled: bool
-    cipher: str
-    cert_subject: str
-    error: Optional[str]
+    PASS = auto()
+    WARN = auto()
+    FAIL = auto()
+    INFO = auto()
 
-class ProbeMTUResult(TypedDict):
-    path_mtu: int
-    fragmentation_point: Optional[int]
-    packets_sent: int
-    packets_lost: int
-    error: Optional[str]
 
-class ProbeOriginResult(TypedDict):
-    edge_probe: ProbeHTTPResult
-    origin_probe: ProbeHTTPResult
-    error: Optional[str]
+AnalysisMeta = Dict[str, Any]
+Recommendations = List[str]
 
-class ProbeASNResult(TypedDict):
-    ip: str
-    asn: Optional[str]
-    country: Optional[str]
-    error: Optional[str]
-    raw_output: str
 
-class Severity(str, Enum):
-    CRITICAL = "CRITICAL"
-    ERROR = "ERROR"
-    WARNING = "WARNING"
-    INFO = "INFO"
-    PASS = "PASS"
+class HTTPClassification(str, Enum):
+    HTTP_PASS = "HTTP_PASS"
+    HTTP_WARN = "HTTP_WARN"
+    HTTP_FAIL = "HTTP_FAIL"
 
-class AnalysisResult(TypedDict):
+
+class TLSClassification(str, Enum):
+    TLS_PASS = "TLS_PASS"
+    TLS_WARN = "TLS_WARN"
+    TLS_FAIL = "TLS_FAIL"
+
+
+class HTTPAnalysisResult(Dict[str, Any]):
+    """
+    Typed dictionary-style object used by tests via keys like:
+      - status: Severity
+      - human_reason: str
+      - classification: HTTPClassification
+      - meta: AnalysisMeta
+      - recommendations: Recommendations
+    """
+
     status: Severity
-    classification: str
     human_reason: str
-    recommendations: List[str]
-    meta: Dict[str, Any]
+    classification: HTTPClassification
+    meta: AnalysisMeta
+    recommendations: Recommendations
+
+
+class TLSAnalysisResult(Dict[str, Any]):
+    """
+    Similar shape for TLS analysis if needed in the future.
+    """
+
+    status: Severity
+    human_reason: str
+    classification: TLSClassification
+    meta: AnalysisMeta
+    recommendations: Recommendations
+

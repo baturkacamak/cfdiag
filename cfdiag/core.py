@@ -13,9 +13,14 @@ from .reporting import (
 )
 from .network import (
     check_internet_connection, check_dependencies,
-    step_dns, step_http,
-    step_ssl, step_mtu, step_origin,
-    run_mtr, step_asn
+    step_dns, step_blacklist, step_dns_trace, step_propagation,
+    step_dnssec, step_domain_status, step_http, step_security_headers,
+    step_http3_udp, step_ssl, step_ocsp, step_tcp, step_mtu,
+    step_traceroute, step_cf_trace, step_cf_forced, step_origin,
+    step_alt_ports, step_redirects, step_waf_evasion,
+    step_speed, step_dns_benchmark, step_doh, step_graph,
+    step_websocket, detect_cloudflare_usage,
+    get_traceroute_hops, ping_host, run_mtr
 )
 from .system import step_lint_config, step_audit
 from .server import run_diagnostic_server
@@ -84,7 +89,121 @@ def generate_grafana() -> None:
     from .dashboard import GRAFANA_JSON
     print(GRAFANA_JSON)
 
-def run_diagnostics(domain: str, origin_ip: Optional[str]=None) -> Dict[str, Any]:
+def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_res, cf_trace_res, origin_res, alt_ports_res, dnssec_status, prop_status, history_diff) -> None:
+    l = get_logger()
+    if not l: return
+    l.log_console(f"\n{Colors.BOLD}{Colors.HEADER}{SEPARATOR}", force=True)
+    l.log_console(f" DIAGNOSTIC SUMMARY: {domain}", force=True)
+    l.log_console(f"{SEPARATOR}{Colors.ENDC}", force=True)
+    
+    l.log_file(f"\n{SEPARATOR}", force=True)
+    l.log_file(f" DIAGNOSTIC SUMMARY", force=True)
+    l.log_file(f"{SEPARATOR}", force=True)
+    
+    # Initialize Cloudflare detection variable (used later for timeout message and summary)
+    cloudflare_in_use = False
+    
+    dns_ok, ipv4, ipv6 = dns_res
+    if not dns_ok:
+        l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} DNS Resolution failed.", file_msg="[CRITICAL] DNS Resolution failed.", force=True)
+        l.log(f"{Colors.GREY}Note: Dependent checks (TCP, SSL, HTTP) were skipped due to DNS failure.{Colors.ENDC}", file_msg="Note: Dependent checks (TCP, SSL, HTTP) were skipped due to DNS failure.", force=True)
+    else:
+        l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} DNS is resolving correctly.", file_msg="[PASS] DNS is resolving correctly.", force=True)
+
+    if prop_status != "N/A":
+        if prop_status == "MATCH":
+            l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Propagation Complete.", file_msg="[PASS] Propagation Complete.", force=True)
+        else:
+            l.log(f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} Propagation Issue ({prop_status}).", file_msg=f"[WARN] Propagation Issue ({prop_status}).", force=True)
+
+    if dnssec_status == "BROKEN":
+        l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} DNSSEC Broken.", file_msg="[CRITICAL] DNSSEC Broken.", force=True)
+    elif dnssec_status == "SIGNED":
+        l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} DNSSEC Signed.", file_msg="[PASS] DNSSEC Signed.", force=True)
+
+    if dns_ok:
+        if ssl_res:
+             l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} SSL Certificate is valid.", file_msg="[PASS] SSL Certificate is valid.", force=True)
+        else:
+             l.log(f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} SSL Certificate information could not be verified.", file_msg="[WARN] SSL Certificate information could not be verified.", force=True)
+
+        if tcp_res:
+             l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} TCP (Port 443) is open.", file_msg="[PASS] TCP (Port 443) is open.", force=True)
+        else:
+             l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} TCP connection failed.", file_msg="[CRITICAL] TCP connection failed.", force=True)
+
+        if mtu_res:
+             l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} MTU (1500) supported.", file_msg="[PASS] MTU (1500) supported.", force=True)
+        else:
+             l.log(f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} MTU/Fragmentation issue.", file_msg="[WARN] MTU/Fragmentation issue.", force=True)
+
+        # Check Cloudflare usage before HTTP status evaluation (needed for timeout message)
+        try:
+            cloudflare_in_use = detect_cloudflare_usage(domain, ipv4 or [], ipv6 or [])
+        except Exception:
+            cloudflare_in_use = False
+
+        http_status, http_code, is_waf, metrics = http_res
+        if http_status == "SUCCESS":
+            l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} HTTP requests are working (Code {http_code}).", file_msg=f"[PASS] HTTP requests are working (Code {http_code}).", force=True)
+        elif http_status == "WAF_BLOCK":
+            l.log(f"{Colors.WARNING}{Colors.BOLD}[BLOCK]{Colors.ENDC} Cloudflare WAF/Challenge detected (Code {http_code}).", file_msg=f"[BLOCK] Cloudflare WAF/Challenge detected (Code {http_code}).", force=True)
+        elif http_status == "CLIENT_ERROR":
+             l.log(f"{Colors.WARNING}{Colors.BOLD}[WARN]{Colors.ENDC} Server returned Client Error (Code {http_code}).", file_msg=f"[WARN] Server returned Client Error (Code {http_code}).", force=True)
+        elif http_status == "SERVER_ERROR":
+             l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} Server returned Error (Code {http_code}).", file_msg=f"[CRITICAL] Server returned Error (Code {http_code}).", force=True)
+             if http_code == 522:
+                l.log(f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 522: Connection Timed Out to Origin.", file_msg="[ALERT] Cloudflare 522: Connection Timed Out to Origin.", force=True)
+             elif http_code == 525:
+                l.log(f"{Colors.FAIL}{Colors.BOLD}[ALERT]{Colors.ENDC} Cloudflare 525: SSL Handshake Failed with Origin.", file_msg="[ALERT] Cloudflare 525: SSL Handshake Failed with Origin.", force=True)
+        elif http_status == "TIMEOUT":
+            # Only mention "Potential 522" if Cloudflare is actually in use
+            if cloudflare_in_use or cf_trace_res[0]:
+                l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} HTTP Request Timed Out (Potential 522).", file_msg="[CRITICAL] HTTP Request Timed Out (Potential 522).", force=True)
+            else:
+                l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} HTTP Request Timed Out.", file_msg="[CRITICAL] HTTP Request Timed Out.", force=True)
+        elif http_status == "SKIPPED":
+             l.log(f"{Colors.GREY}[SKIP] HTTP Check skipped.", file_msg="[SKIP] HTTP Check skipped.", force=True)
+
+        if origin_res:
+            connected, reason = origin_res
+            if connected and reason == "SUCCESS":
+                 l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Direct Origin Connection SUCCEEDED.", file_msg="[PASS] Direct Origin Connection SUCCEEDED.", force=True)
+                 if http_code in [522, 524, 502, 504]:
+                      l.log(f"{Colors.FAIL}{Colors.BOLD}[DIAGNOSIS]{Colors.ENDC} Origin is UP but Cloudflare is failing.", file_msg="[DIAGNOSIS] Origin is UP but Cloudflare is failing.", force=True)
+                      l.log("  -> CAUSE: Firewall is likely blocking Cloudflare IPs.", file_msg="  -> CAUSE: Firewall is likely blocking Cloudflare IPs.", force=True)
+            elif not connected and reason == "TIMEOUT":
+                 l.log(f"{Colors.FAIL}{Colors.BOLD}[CRITICAL]{Colors.ENDC} Direct Origin Connection TIMED OUT.", file_msg="[CRITICAL] Direct Origin Connection TIMED OUT.", force=True)
+                 l.log(f"{Colors.FAIL}{Colors.BOLD}[DIAGNOSIS]{Colors.ENDC} Origin Server is DOWN or Unreachable.", file_msg="[DIAGNOSIS] Origin Server is DOWN or Unreachable.", force=True)
+
+    # Cloudflare usage detection based on resolved IPs and NS records.
+    # Only report Cloudflare Edge as reachable if target actually uses Cloudflare.
+    # Note: cloudflare_in_use is already calculated above (before HTTP status check) for timeout message logic.
+    # cf_trace_res[0] is True if /cdn-cgi/trace responded, which is a strong Cloudflare signal.
+    if cloudflare_in_use or cf_trace_res[0]:
+        l.log(f"{Colors.OKGREEN}{Colors.BOLD}[PASS]{Colors.ENDC} Cloudflare Edge Network is reachable.", file_msg="[PASS] Cloudflare Edge Network is reachable.", force=True)
+    else:
+        # No Cloudflare IP/NS match detected – make this explicit in the report.
+        l.log(
+            f"{Colors.OKBLUE}{Colors.BOLD}[INFO]{Colors.ENDC} Target is NOT using Cloudflare (Direct/Third-party hosting detected).",
+            file_msg="[INFO] Target is NOT using Cloudflare (Direct/Third-party hosting detected).",
+            force=True,
+        )
+
+    if history_diff:
+        l.log_file("\n-- History Comparison --")
+        l.log_console(f"\n{Colors.BOLD}-- History Comparison --{Colors.ENDC}", force=True)
+        if 'ttfb_diff' in history_diff:
+            diff = history_diff['ttfb_diff']
+            sign = "+" if diff > 0 else ""
+            color = Colors.FAIL if diff > 0.5 else Colors.OKGREEN
+            msg = f"TTFB Change: {color}{sign}{diff:.2f}s{Colors.ENDC}"
+            l.log(msg, file_msg=f"TTFB Change: {sign}{diff:.2f}s", force=True)
+
+    l.log_console(f"\n{Colors.GREY}{SEPARATOR}{Colors.ENDC}", force=True)
+    l.log_file(f"\n{SEPARATOR}")
+
+def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False, speed_test: bool=False, dns_benchmark: bool=False, doh_check: bool=False, audit: bool=False, ws_check: bool=False) -> Dict[str, Any]:
     reports_dir = "reports"
     domain_dir = os.path.join(reports_dir, domain)
     if not os.path.exists(domain_dir): os.makedirs(domain_dir)
@@ -105,6 +224,116 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None) -> Dict[str, Any
     step_mtu(domain)
     step_asn(domain)
     
+    if doh_check: step_doh(domain)
+    
+    if ipv4: step_blacklist(domain, ipv4[0])
+    step_dns_trace(domain)
+    prop_status = step_propagation(domain, expected_ns) if expected_ns else "N/A"
+    dnssec_status = step_dnssec(domain)
+    step_domain_status(domain)
+    
+    # State flags and human-readable status strings for dependent checks
+    http_ok = False
+    tcp_ok = False
+    ssl_ok = False
+    mtu_ok = False
+    http_res = ("SKIPPED", 0, False, {})
+    ssl_status = "N/A"
+    mtu_status = "N/A"
+
+    # If DNS failed, skip all downstream network checks entirely.
+    if not dns_ok:
+        print_subheader("7. HTTP/HTTPS Availability")
+        print_skip("DNS resolution failed.")
+        print_subheader("8. HTTP/3 (QUIC) Check")
+        print_skip("DNS resolution failed.")
+        print_subheader("9. SSL/TLS Check")
+        print_skip("DNS resolution failed.")
+        print_subheader("10. TCP Connectivity")
+        print_skip("DNS resolution failed.")
+        print_subheader("11. MTU Check")
+        print_skip("DNS resolution failed.")
+        # No TCP/SSL/HTTP/MTU executed when DNS failed.
+    else:
+        # 2. TCP Connectivity immediately after DNS.
+        tcp_ok = step_tcp(domain)
+
+        if not tcp_ok:
+            # Dependency chain: when TCP fails, higher-level checks are skipped.
+            skip_reason = "SKIPPED (No TCP Connection)"
+
+            print_subheader("7. HTTP/HTTPS Availability")
+            print_skip("SKIPPED (No TCP Connection)")
+            http_res = (skip_reason, 0, False, {})
+
+            print_subheader("9. SSL/TLS Check")
+            print_skip("SKIPPED (No TCP Connection)")
+            ssl_status = skip_reason
+
+            print_subheader("11. MTU Check")
+            print_skip("SKIPPED (No TCP Connection)")
+            mtu_status = skip_reason
+        else:
+            # 7. HTTP Check (Depends on DNS + TCP)
+            http_res = step_http(domain)
+            if http_res[1] > 0:
+                http_ok = True
+
+            # 7.5 Security Headers (Depends on HTTP)
+            if http_ok:
+                step_security_headers(domain)
+            else:
+                print_subheader("7.5. Security Header Audit")
+                print_skip("Requires functional HTTP response.")
+
+            # 8. HTTP/3 (Depends on DNS + TCP)
+            step_http3_udp(domain)
+
+            # 22. WebSocket (Depends on HTTP)
+            if ws_check:
+                if http_ok:
+                    step_websocket(domain)
+                else:
+                    print_subheader("22. WebSocket Handshake Check")
+                    print_skip("Requires functional HTTP.")
+
+            # 9. SSL (Depends on DNS + TCP)
+            ssl_ok = step_ssl(domain)
+            ssl_status = "PASS" if ssl_ok else "FAIL"
+
+            # 9.5 OCSP (Depends on SSL)
+            if ssl_ok:
+                step_ocsp(domain)
+            else:
+                print_subheader("9.5 OCSP Stapling Check")
+                print_skip("Requires valid SSL.")
+
+            # 11. MTU (Depends on TCP/Connectivity)
+            mtu_ok = step_mtu(domain)
+            mtu_status = "PASS" if mtu_ok else "WARN"
+        
+    # 16. Alt Ports (Depends on failed TCP, so if DNS OK but TCP Fail)
+    alt_ports_res = (False, [])
+    if dns_ok and not tcp_ok:
+        alt_ports_res = step_alt_ports(domain)
+    
+    # 12. Traceroute (Depends on DNS)
+    if dns_ok:
+        step_traceroute(domain)
+        
+    # 13. CF Trace (Depends on HTTP)
+    cf_trace_ok = (False, {})
+    if http_ok:
+        cf_trace_ok = step_cf_trace(domain)
+    else:
+        print_subheader("13. CF Trace")
+        print_skip("Requires functional HTTP.")
+        
+    # 14. CF Forced (Environment check)
+    cf_ok = step_cf_forced(domain)
+    
+    # 15. Origin (Depends on user input)
+    origin_res = None
     if origin_ip:
          step_origin(domain, origin_ip)
 
@@ -114,7 +343,21 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None) -> Dict[str, Any
     
     return {
         "domain": domain,
-        "log": log_file
+        "dns": prop_status if expected_ns else ("OK" if dns_ok else "FAIL"),
+        "http": http_res[0],
+        "tcp": "OK" if tcp_ok else "FAIL",
+        "ssl": ssl_status,
+        "mtu": mtu_status,
+        "dnssec": dnssec_status,
+        "log": log_file,
+        "details": {
+            "ipv4": ipv4,
+            "ipv6": ipv6,
+            "ssl_ok": ssl_ok,
+            "http_status": http_res[1],
+            "http_metrics": http_res[3],
+            "history_diff": history_diff
+        }
     }
 
 def run_diagnostics_wrapper(domain: str, origin: Optional[str], context: Dict[str, Any]) -> Dict[str, Any]:

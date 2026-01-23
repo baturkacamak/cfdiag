@@ -9,6 +9,8 @@ import time
 from typing import List, Dict, Tuple, Optional, Any, Union
 from datetime import datetime
 
+import certifi
+
 from .types import (
     ProbeDNSResult, ProbeHTTPResult, ProbeTLSResult, ProbeMTUResult, 
     ProbeOriginResult, ProbeASNResult
@@ -161,7 +163,8 @@ def probe_http(url: str, timeout: int = 10, resolve: Optional[Dict[str, str]] = 
     return result
 
 def probe_tls(domain: str, port: int = 443, timeout: int = 5, keylog_file: Optional[str] = None) -> ProbeTLSResult:
-    context = ssl.create_default_context()
+    # Use certifi CA bundle to avoid false certificate verification failures.
+    context = ssl.create_default_context(cafile=certifi.where())
     if keylog_file:
         context.keylog_filename = keylog_file # type: ignore
         

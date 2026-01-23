@@ -1,6 +1,7 @@
 import re
 import json
 import os
+import html
 import threading
 import urllib.request
 from typing import Dict, Any, Optional, List
@@ -30,9 +31,9 @@ class FileLogger:
                 print(msg, end=end, flush=flush)
 
     def log_file(self, msg: str, end: str = "\n", force: bool = False) -> None:
-        if self.verbose or force:
-            clean_msg = self.ansi_escape.sub('', msg)
-            self.file_buffer.append(clean_msg + end)
+        # Always log to file buffer for reports (verbose output should always be included)
+        clean_msg = self.ansi_escape.sub('', msg)
+        self.file_buffer.append(clean_msg + end)
 
     def log(self, msg: str = "", file_msg: Optional[str] = None, end: str = "\n", flush: bool = False, force: bool = False) -> None:
         self.log_console(msg, end, flush, force)
@@ -87,6 +88,22 @@ class FileLogger:
                     title = step.get('title', '')
                     details = step.get('details', '')
                     html_parts.append(f"<div class='step'><div class='step-header status-{status}'><span>{title}</span><span>[{status}]</span></div><div class='step-content'>{details}</div></div>")
+        html_parts.append("<div class='summary'><h2>Summary</h2><ul>")
+        summary = self.html_data.get("summary", [])
+        if isinstance(summary, list):
+            for line in summary:
+                html_parts.append(f"<li>{line}</li>")
+        html_parts.append("</ul></div>")
+        
+        # Add verbose output section with full diagnostic log
+        if self.file_buffer:
+            html_parts.append("<div class='step' style='margin-top: 30px;'><div class='step-header status-INFO'><span>Verbose Output</span><span>[INFO]</span></div><div class='step-content'>")
+            # Escape HTML in file buffer content
+            verbose_content = "".join(self.file_buffer)
+            verbose_content = html.escape(verbose_content)
+            html_parts.append(verbose_content)
+            html_parts.append("</div></div>")
+        
         html_parts.append("</div></body></html>")
         try:
             with open(filename, 'w', encoding='utf-8') as f: f.write("\n".join(html_parts))
@@ -115,6 +132,15 @@ class FileLogger:
                     lines.append(details)
                     lines.append("```")
                     lines.append("")
+        
+        # Add verbose output section
+        if self.file_buffer:
+            lines.append("## Verbose Output")
+            lines.append("```")
+            verbose_content = "".join(self.file_buffer)
+            lines.append(verbose_content)
+            lines.append("```")
+        
         try:
             with open(filename, 'w', encoding='utf-8') as f: f.write("\n".join(lines))
             return True
