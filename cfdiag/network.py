@@ -306,11 +306,21 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     
     code, output = run_command(cmd, log_output_to_file=True)
     
+    # HTTP status code from server (0 means "not set"/unknown).
     status = 0
     waf = False
-    metrics: Dict[str, float] = {}
+    # Always provide a metrics dictionary with required keys to avoid template crashes.
+    metrics: Dict[str, float] = {
+        "connect": 0.0,
+        "start": 0.0,
+        "total": 0.0,
+        "ttfb": 0.0,
+    }
+    
+    error_label: Optional[str] = None
     
     if code == 0:
+        # Curl completed; try to parse the metrics trailer.
         lines = output.splitlines()
         metrics_line = ""
         for l in reversed(lines):
@@ -321,36 +331,69 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
         if metrics_line:
             try:
                 parts = dict(p.split('=') for p in metrics_line.split(';;'))
-                status = int(parts.get('code', 0)) # type: ignore
-                metrics = {k: float(v) for k, v in parts.items() if k != 'code'}
-            except: pass
+                status = int(parts.get('code', 0))  # type: ignore
+                # Update metrics but keep all required keys present.
+                parsed_metrics = {k: float(v) for k, v in parts.items() if k != 'code'}
+                metrics.update(parsed_metrics)
+            except Exception:
+                # Metrics parsing failed; keep defaults but mark as error.
+                error_label = "MetricsParseError"
+    else:
+        # Non-zero curl exit code. Derive a human-friendly error label.
+        lower_out = output.lower()
+        if code == 28 or "timed out" in lower_out:
+            error_label = "ConnectTimeout"
+        elif "connection refused" in lower_out:
+            error_label = "ConnectionError"
+        elif "ssl" in lower_out or "certificate" in lower_out:
+            error_label = "SSLError"
+        else:
+            error_label = f"CurlError({code})"
+        # Use a dedicated sentinel status code instead of 0.
+        status = -1
     
     l = get_logger()
-    status_str = "PASS" if 200<=status<400 else "FAIL"
-    if l: l.add_html_step("HTTP", status_str, f"Status: {status}\nMetrics: {metrics}")
+    # Determine high-level status string and detailed status line for reporting.
+    if error_label:
+        status_str = "FAIL"
+        status_line = f"Status: ERROR ({error_label})"
+    else:
+        status_str = "PASS" if 200 <= status < 400 else "FAIL"
+        status_line = f"Status: {status}"
     
-    if 200 <= status < 400:
+    if l:
+        l.add_html_step("HTTP", status_str, f"{status_line}\nMetrics: {metrics}")
+    
+    if not error_label and 200 <= status < 400:
         print_success(f"Response: {Colors.WHITE}HTTP {status}{Colors.ENDC}")
-    elif status >= 400:
+    elif not error_label and status >= 400:
         if waf:
-             print_warning(f"WAF/Challenge Blocked (HTTP {status})")
+            print_warning(f"WAF/Challenge Blocked (HTTP {status})")
         elif status < 500:
-             print_warning(f"Client Error: HTTP {status}")
+            print_warning(f"Client Error: HTTP {status}")
         else:
-             print_fail(f"Server Error: HTTP {status}")
-
+            print_fail(f"Server Error: HTTP {status}")
+    elif error_label:
+        print_warning(f"HTTP Request Error: {error_label}")
+    
     if metrics:
-        ttfb_ms = int(metrics.get('ttfb', 0) * 1000)
-        conn_ms = int(metrics.get('connect', 0) * 1000)
+        ttfb_ms = int(metrics.get("ttfb", 0) * 1000)
+        conn_ms = int(metrics.get("connect", 0) * 1000)
         print_info(f"Latency: Connect={conn_ms}ms, TTFB={ttfb_ms}ms")
-
+    
     step_cache_headers(output)
     
     res_str = "FAIL"
-    if 200 <= status < 400: res_str = "SUCCESS"
-    elif 400 <= status < 500: res_str = "CLIENT_ERROR"
-    elif 500 <= status < 600: res_str = "SERVER_ERROR"
-    elif code == 28: res_str = "TIMEOUT" # Curl timeout
+    if not error_label and 200 <= status < 400:
+        res_str = "SUCCESS"
+    elif not error_label and 400 <= status < 500:
+        res_str = "CLIENT_ERROR"
+    elif not error_label and 500 <= status < 600:
+        res_str = "SERVER_ERROR"
+    elif error_label == "ConnectTimeout":
+        res_str = "TIMEOUT"
+    elif error_label is not None:
+        res_str = "ERROR"
     
     return res_str, status, False, metrics
 
