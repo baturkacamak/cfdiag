@@ -301,14 +301,21 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     print_subheader("7. HTTP/HTTPS Availability")
     fmt = "code=%{http_code};;connect=%{time_connect};;start=%{time_starttransfer};;total=%{time_total}"
     flags = get_curl_flags()
+    # Use -I for headers but also fetch body for WAF detection
     cmd = f"curl{flags} -I -w \"{fmt}\" --connect-timeout 10 https://{domain}"
     print_cmd(cmd)
     
     code, output = run_command(cmd, log_output_to_file=True)
     
+    # Also fetch body for WAF detection (separate request)
+    body_cmd = f"curl{flags} -s --connect-timeout 10 --max-time 5 https://{domain}"
+    body_code, body_output = run_command(body_cmd, show_output=False, log_output_to_file=False)
+    
     # HTTP status code from server (0 means "not set"/unknown).
     status = 0
     waf = False
+    waf_name: Optional[str] = None
+    waf_reason = ""
     # Always provide a metrics dictionary with required keys to avoid template crashes.
     metrics: Dict[str, float] = {
         "connect": 0.0,
@@ -318,6 +325,7 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     }
     
     error_label: Optional[str] = None
+    headers: Dict[str, str] = {}
     
     if code == 0:
         # Curl completed; try to parse the metrics trailer.
@@ -327,6 +335,12 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
             if l.startswith("code="):
                 metrics_line = l
                 break
+        
+        # Parse headers from output (skip HTTP status line and metrics line)
+        for line in lines:
+            if ':' in line and not line.startswith("HTTP/") and not line.startswith("code="):
+                k, v = line.split(':', 1)
+                headers[k.strip()] = v.strip()
         
         if metrics_line:
             try:
@@ -338,6 +352,12 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
             except Exception:
                 # Metrics parsing failed; keep defaults but mark as error.
                 error_label = "MetricsParseError"
+        
+        # Perform WAF detection using headers and body
+        body_text = body_output if body_code == 0 else ""
+        waf_detected, waf_name, waf_reason = detect_waf_from_response(status, headers, body_text)
+        waf = waf_detected
+        # Store waf_name and waf_reason for later use in status reporting
     else:
         # Non-zero curl exit code. Derive a human-friendly error label.
         lower_out = output.lower()
@@ -357,6 +377,20 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     if error_label:
         status_str = "FAIL"
         status_line = f"Status: ERROR ({error_label})"
+    elif waf and waf_name:
+        # WAF detected (regardless of status code)
+        status_str = "FAIL" if status >= 400 else "WARN"
+        if status in [403, 406]:
+            status_line = f"Status: {status} Forbidden (WAF Detected: {waf_name})"
+        else:
+            status_line = f"Status: {status} (WAF Detected: {waf_name})"
+    elif status in [403, 406]:
+        if waf_reason == "Unconfirmed (No WAF signatures found)":
+            status_str = "FAIL"
+            status_line = f"Status: {status} Forbidden (Server Config / Access Denied)"
+        else:
+            status_str = "FAIL"
+            status_line = f"Status: {status} Forbidden"
     else:
         status_str = "PASS" if 200 <= status < 400 else "FAIL"
         status_line = f"Status: {status}"
@@ -367,8 +401,10 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     if not error_label and 200 <= status < 400:
         print_success(f"Response: {Colors.WHITE}HTTP {status}{Colors.ENDC}")
     elif not error_label and status >= 400:
-        if waf:
-            print_warning(f"WAF/Challenge Blocked (HTTP {status})")
+        if waf and waf_name:
+            print_warning(f"WAF Detected ({waf_name}): HTTP {status}")
+        elif waf_reason == "Unconfirmed (No WAF signatures found)":
+            print_warning(f"HTTP {status} Forbidden (Server Config / Access Denied - WAF Unconfirmed)")
         elif status < 500:
             print_warning(f"Client Error: HTTP {status}")
         else:
@@ -395,7 +431,114 @@ def step_http(domain: str) -> Tuple[str, int, bool, Dict[str, float]]:
     elif error_label is not None:
         res_str = "ERROR"
     
-    return res_str, status, False, metrics
+    return res_str, status, waf, metrics
+
+def detect_waf_from_response(status_code: int, headers: Dict[str, str], body: str = "") -> Tuple[bool, Optional[str], str]:
+    """
+    Detect WAF presence from HTTP response headers and body.
+    
+    Returns:
+        Tuple of (is_waf_detected, waf_name_or_none, detection_reason)
+    """
+    headers_lower = {k.lower(): v.lower() for k, v in headers.items()}
+    body_lower = body.lower()
+    
+    # Known WAF header signatures (key: value patterns or just header keys)
+    waf_header_signatures = {
+        'cloudflare': [
+            ('server', 'cloudflare'),
+            ('cf-ray', None),
+            ('cf-cache-status', None),
+            ('cf-request-id', None),
+        ],
+        'sucuri': [
+            ('x-sucuri-id', None),
+            ('x-sucuri-cache', None),
+        ],
+        'aws': [
+            ('x-amzn-requestid', None),
+            ('x-amzn-trace-id', None),
+            ('server', 'awsalb'),
+        ],
+        'incapsula': [
+            ('x-iinfo', None),
+            ('x-cdn', None),
+        ],
+        'akamai': [
+            ('x-akamai-transformed', None),
+            ('server', 'akamai'),
+        ],
+        'fastly': [
+            ('x-fastly-request-id', None),
+            ('server', 'fastly'),
+        ],
+        'imperva': [
+            ('x-imforwards', None),
+            ('x-cdn-srv', None),
+        ],
+    }
+    
+    # Known WAF body signatures
+    waf_body_signatures = [
+        'captcha',
+        'challenge',
+        'attention required',
+        'security check',
+        'please turn javascript on',
+        'access denied by security policy',
+        'cloudflare',
+        'sucuri',
+        'incapsula',
+        'imperva',
+    ]
+    
+    detected_waf = None
+    detection_reason = ""
+    
+    # Check headers for WAF signatures
+    for waf_name, sigs in waf_header_signatures.items():
+        for key_pattern, value_pattern in sigs:
+            header_key_lower = key_pattern.lower()
+            if header_key_lower in headers_lower:
+                header_value_lower = headers_lower[header_key_lower]
+                # If value pattern is specified, check it matches
+                if value_pattern is None or value_pattern.lower() in header_value_lower:
+                    detected_waf = waf_name.capitalize()
+                    detection_reason = f"Header signature: {key_pattern}"
+                    return True, detected_waf, detection_reason
+    
+    # Check body for WAF signatures
+    # First check for specific WAF names in body (more specific)
+    if 'cloudflare' in body_lower:
+        detected_waf = "Cloudflare"
+        detection_reason = "Body signature: cloudflare"
+        return True, detected_waf, detection_reason
+    elif 'sucuri' in body_lower:
+        detected_waf = "Sucuri"
+        detection_reason = "Body signature: sucuri"
+        return True, detected_waf, detection_reason
+    elif 'incapsula' in body_lower:
+        detected_waf = "Incapsula"
+        detection_reason = "Body signature: incapsula"
+        return True, detected_waf, detection_reason
+    elif 'imperva' in body_lower:
+        detected_waf = "Imperva"
+        detection_reason = "Body signature: imperva"
+        return True, detected_waf, detection_reason
+    
+    # Then check for generic WAF signatures
+    for sig in waf_body_signatures:
+        if sig in body_lower and sig not in ['cloudflare', 'sucuri', 'incapsula', 'imperva']:
+            detected_waf = "Generic"
+            detection_reason = f"Body signature: {sig}"
+            return True, detected_waf, detection_reason
+    
+    # If status is 403/406 but no WAF signatures found, mark as unconfirmed
+    if status_code in [403, 406]:
+        return False, None, "Unconfirmed (No WAF signatures found)"
+    
+    return False, None, "None"
+
 
 def step_cache_headers(http_output: str) -> None:
     headers = {}
@@ -638,23 +781,79 @@ def step_waf_evasion(domain: str) -> None:
     print_subheader("18. WAF / User-Agent Test")
     blocked = []
     allowed = []
+    waf_detected_overall = False
+    waf_name_overall: Optional[str] = None
     flags = get_curl_flags()
+    
     for name, ua in USER_AGENTS.items():
-        cmd = f'curl{flags} -I -s -o /dev/null -w "%{{http_code}}" -H "User-Agent: {ua}" https://{domain}'
-        c, code_str = run_command(cmd, show_output=False, log_output_to_file=True)
+        # Fetch both headers and body for WAF detection
+        cmd_headers = f'curl{flags} -I -s -w "%{{http_code}}" -H "User-Agent: {ua}" https://{domain}'
+        cmd_body = f'curl{flags} -s -H "User-Agent: {ua}" https://{domain}'
+        
+        c_h, output_h = run_command(cmd_headers, show_output=False, log_output_to_file=True)
+        c_b, output_b = run_command(cmd_body, show_output=False, log_output_to_file=False)
+        
         try:
-            code = int(code_str)
+            # Extract status code from curl output (last line should be the HTTP code from -w format)
+            lines_h = output_h.strip().splitlines()
+            code = 0
+            if lines_h:
+                # Try to get status code from last line (curl -w output)
+                try:
+                    code = int(lines_h[-1])
+                except ValueError:
+                    # If last line is not a number, try to parse HTTP status line
+                    for line in lines_h:
+                        if line.startswith("HTTP/"):
+                            try:
+                                code = int(line.split()[1])
+                                break
+                            except (IndexError, ValueError):
+                                pass
+            
+            # Parse headers
+            headers: Dict[str, str] = {}
+            for line in lines_h:
+                if ':' in line and not line.startswith("HTTP/") and not line.strip().isdigit():
+                    k, v = line.split(':', 1)
+                    headers[k.strip()] = v.strip()
+            
+            # Detect WAF from this response
+            body_text = output_b if c_b == 0 else ""
+            waf_detected, waf_name, waf_reason = detect_waf_from_response(code, headers, body_text)
+            
+            if waf_detected:
+                waf_detected_overall = True
+                if waf_name:
+                    waf_name_overall = waf_name
+            
             if code == 403 or code == 406:
-                print_warning(f"{name}: BLOCKED (HTTP {code})")
+                if waf_detected:
+                    print_warning(f"{name}: BLOCKED (HTTP {code}) - WAF: {waf_name or 'Detected'}")
+                else:
+                    print_warning(f"{name}: BLOCKED (HTTP {code}) - WAF Unconfirmed")
                 blocked.append(name)
             else:
                 print_success(f"{name}: OK (HTTP {code})")
                 allowed.append(name)
-        except: pass
+        except Exception:
+            pass
+    
     l = get_logger()
     if blocked:
-        l.log(f"{Colors.WARNING}WAF Detected: Blocks {', '.join(blocked)}{Colors.ENDC}", force=True)
-    if l: l.add_html_step("WAF Evasion", "INFO", f"Blocked: {blocked}\nAllowed: {allowed}")
+        if waf_detected_overall and waf_name_overall:
+            l.log(f"{Colors.WARNING}WAF Detected ({waf_name_overall}): Blocks {', '.join(blocked)}{Colors.ENDC}", force=True)
+        else:
+            l.log(f"{Colors.WARNING}WAF Detected (Unconfirmed): Blocks {', '.join(blocked)}{Colors.ENDC}", force=True)
+    
+    details = f"Blocked: {blocked}\nAllowed: {allowed}"
+    if waf_detected_overall and waf_name_overall:
+        details += f"\nWAF: {waf_name_overall}"
+    elif blocked:
+        details += "\nWAF: Unconfirmed (Potential WAF / ACL)"
+    
+    if l:
+        l.add_html_step("WAF Evasion", "INFO", details)
 
 def step_speed(domain: str) -> None:
     print_subheader("19. Throughput Speed Test")
