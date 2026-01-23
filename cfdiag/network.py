@@ -238,7 +238,51 @@ def step_dns_trace(domain: str) -> None:
     if ctx.get('ipv6'): flags += " -6"
     
     c, out = run_command(f"dig +trace{flags} {domain}", timeout=15, log_output_to_file=True)
-    status = "PASS" if c==0 and "NOERROR" in out else "WARN"
+    
+    # Parse DNS trace output for real errors only
+    # Only treat these as errors: SERVFAIL, NXDOMAIN, REFUSED, communications error, connection timed out
+    # Ignore harmless warnings like "Warning: multiple addresses"
+    status = "PASS"
+    error_message = None
+    
+    out_lower = out.lower()
+    
+    # Check for real DNS errors
+    if "servfail" in out_lower:
+        status = "FAIL"
+        error_message = "SERVFAIL: DNS server failure"
+    elif "nxdomain" in out_lower:
+        status = "FAIL"
+        error_message = "NXDOMAIN: Domain not found"
+    elif "refused" in out_lower and "status:" in out_lower:
+        # Only treat REFUSED as error if it's in the status line, not in warning messages
+        status = "WARN"
+        error_message = "REFUSED: DNS query refused"
+    elif "communications error" in out_lower:
+        status = "FAIL"
+        error_message = "Communications error: DNS server unreachable"
+    elif "connection timed out" in out_lower or "connection timeout" in out_lower:
+        status = "FAIL"
+        error_message = "Connection timed out: DNS server timeout"
+    elif "no servers could be reached" in out_lower:
+        status = "FAIL"
+        error_message = "No DNS servers could be reached"
+    elif c != 0:
+        # Non-zero exit code but no specific error pattern matched
+        status = "WARN"
+        error_message = f"Dig command exited with code {c}"
+    elif "noerror" in out_lower or "status: noerror" in out_lower:
+        # Successful query - ensure PASS status
+        status = "PASS"
+    
+    # Print appropriate message
+    if status == "PASS":
+        print_success("DNS Trace completed successfully")
+    elif status == "WARN":
+        print_warning(f"DNS Trace: {error_message or 'Warning detected'}")
+    else:  # FAIL
+        print_fail(f"DNS Trace: {error_message or 'Error detected'}")
+    
     l = get_logger()
     if l: l.add_html_step("DNS Trace", status, out)
 
