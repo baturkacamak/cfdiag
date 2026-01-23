@@ -30,6 +30,9 @@ Force all checks to use IPv6.
 .B \-\-proxy \fIURL\fR
 Use the specified HTTP/HTTPS proxy for web requests.
 .TP
+.B \-\-traceroute-limit \fIN\fR
+Maximum number of hops for traceroute (default: 5). Prevents infinite loops when traceroute returns repeated timeouts.
+.TP
 .B \-\-json
 Output the full diagnostic result as a JSON object to stdout. Suppresses normal logging.
 .TP

@@ -964,13 +964,24 @@ def step_traceroute(domain: str) -> None:
         print_info("Traceroute not available")
         return
     
-    flags = get_curl_flags()
     from .utils import get_context
     ctx = get_context()
-    if ctx.get('ipv4'): flags += " -4"
-    if ctx.get('ipv6'): flags += " -6"
+    traceroute_limit = ctx.get('traceroute_limit', 5)
     
-    cmd = f"{trace_cmd} {domain}"
+    # Build traceroute command with limit
+    if os.name == 'nt':
+        # Windows tracert uses -h for max hops
+        cmd = f"{trace_cmd} -h {traceroute_limit} {domain}"
+        # Windows tracert doesn't support -4/-6 flags directly
+    else:
+        # Linux/Unix traceroute uses -m for max hops
+        cmd = f"{trace_cmd} -m {traceroute_limit} {domain}"
+        # Add IPv4/IPv6 flags if specified (Linux/Unix only)
+        if ctx.get('ipv4'):
+            cmd = cmd.replace(trace_cmd, f"{trace_cmd} -4")
+        elif ctx.get('ipv6'):
+            cmd = cmd.replace(trace_cmd, f"{trace_cmd} -6")
+    
     code, output = run_command(cmd, timeout=30, log_output_to_file=True)
     if l: l.log_file(f"Traceroute output:\n{output}")
 
@@ -1074,9 +1085,10 @@ def step_websocket(domain: str, path: str = "/") -> None: # Feature: WebSocket H
         if l: l.add_html_step("WebSocket", "FAIL", str(e))
 
 def get_traceroute_hops(domain: str) -> List[str]:
-    cmd = f"tracert -h 15 {domain}" if os.name == 'nt' else f"traceroute -m 15 -w 2 {domain}"
     from .utils import get_context
     ctx = get_context()
+    traceroute_limit = ctx.get('traceroute_limit', 15)  # Default to 15 for MTR mode if not set
+    cmd = f"tracert -h {traceroute_limit} {domain}" if os.name == 'nt' else f"traceroute -m {traceroute_limit} -w 2 {domain}"
     flags = ""
     if ctx.get('ipv4'): flags = " -4"
     if ctx.get('ipv6'): flags = " -6"

@@ -46,6 +46,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
             ['cfdiag', 'example.com', '--ipv6'],
             ['cfdiag', 'example.com', '--proxy', 'http://proxy:8080'],
             ['cfdiag', 'example.com', '--timeout', '20'],
+            ['cfdiag', 'example.com', '--traceroute-limit', '10'],
             ['cfdiag', 'example.com', '--header', 'X-Foo: Bar'],
             ['cfdiag', 'example.com', '--header', 'X-Foo: Bar', '--header', 'X-Bar: Baz'],
         ]

@@ -415,7 +415,8 @@ def interactive_mode() -> None:
         'proxy': None,
         'keylog_file': None,
         'headers': None,
-        'timeout': 10
+        'timeout': 10,
+        'traceroute_limit': 5
     }
     
     silent = format_input == "2"  # JSON mode is silent
@@ -447,7 +448,7 @@ _cfdiag()
     COMPREPLY=()
     cur=\"${COMP_WORDS[COMP_CWORD]}\"
     prev=\"${COMP_WORDS[COMP_CWORD-1]}\" 
-    opts=\"--origin --expect --profile --file --threads --ipv4 --ipv6 --proxy --timeout --header --keylog --mtr --watch --json --markdown --junit --metrics --lint-config --analyze-logs --serve --grafana --completion --verbose --no-color --interactive --version --update\"
+    opts=\"--origin --expect --profile --file --threads --ipv4 --ipv6 --proxy --timeout --traceroute-limit --header --keylog --mtr --watch --json --markdown --junit --metrics --lint-config --analyze-logs --serve --grafana --completion --verbose --no-color --interactive --version --update\"
 
     if [[ ${cur} == -* ]] ; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -472,6 +473,7 @@ _cfdiag() {
         '--ipv6[Force IPv6]'
         '--proxy[HTTP Proxy URL]:url'
         '--timeout[Connection timeout in seconds]:int'
+        '--traceroute-limit[Maximum number of hops for traceroute]:int'
         '--header[Custom HTTP header]:string'
         '--keylog[SSL Keylog file]:filename:_files'
         '--mtr[Run interactive MTR trace]'
@@ -544,6 +546,8 @@ For more information, visit: https://github.com/baturkacamak/cfdiag
                               help="Use HTTP/HTTPS proxy for all web requests (e.g. http://1.2.3.4:8080)")
     network_group.add_argument("--timeout", type=int, default=10, metavar="SECONDS",
                               help="Connection timeout in seconds (default: 10)")
+    network_group.add_argument("--traceroute-limit", type=int, default=5, metavar="N",
+                              help="Maximum number of hops for traceroute (default: 5). Prevents infinite loops when traceroute returns repeated timeouts.")
     network_group.add_argument("--header", action="append", metavar="HEADER",
                               help="Add custom HTTP header (can be used multiple times). Format: 'X-Foo: Bar'")
     
@@ -623,7 +627,8 @@ For more information, visit: https://github.com/baturkacamak/cfdiag
         'proxy': args.proxy,
         'keylog_file': args.keylog,
         'headers': args.header,
-        'timeout': args.timeout
+        'timeout': args.timeout,
+        'traceroute_limit': args.traceroute_limit
     }
 
     if args.file:

@@ -242,6 +242,124 @@ class TestNetwork(unittest.TestCase):
         # But this test checks current behavior. I should update this test expectation to match "Standard MTU" 
         # if I change step_mtu to use human_reason.
         # For now I just remove test_step_websocket.
+
+    @patch('cfdiag.network.shutil.which')
+    @patch('cfdiag.network.run_command')
+    def test_step_traceroute_with_default_limit(self, mock_run, mock_which):
+        """Test traceroute uses default limit of 5 when not specified."""
+        import os
+        mock_which.return_value = '/usr/bin/traceroute'
+        mock_run.return_value = (0, "traceroute output")
+        
+        # Set context without traceroute_limit (should default to 5)
+        cfdiag.utils.set_context({})
+        
+        cfdiag.network.step_traceroute("example.com")
+        
+        # Verify traceroute was called with -m 5 (Linux) or -h 5 (Windows)
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0]
+        cmd = call_args[0]
+        if os.name == 'nt':
+            self.assertIn('-h 5', cmd)
+        else:
+            self.assertIn('-m 5', cmd)
+        self.assertIn('example.com', cmd)
+
+    @patch('cfdiag.network.shutil.which')
+    @patch('cfdiag.network.run_command')
+    def test_step_traceroute_with_custom_limit(self, mock_run, mock_which):
+        """Test traceroute uses custom limit from context."""
+        import os
+        mock_which.return_value = '/usr/bin/traceroute'
+        mock_run.return_value = (0, "traceroute output")
+        
+        # Set context with custom traceroute_limit
+        cfdiag.utils.set_context({'traceroute_limit': 10})
+        
+        cfdiag.network.step_traceroute("example.com")
+        
+        # Verify traceroute was called with custom limit
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0]
+        cmd = call_args[0]
+        if os.name == 'nt':
+            self.assertIn('-h 10', cmd)
+        else:
+            self.assertIn('-m 10', cmd)
+        self.assertIn('example.com', cmd)
+
+    @patch('cfdiag.network.shutil.which')
+    @patch('cfdiag.network.run_command')
+    def test_step_traceroute_with_ipv4_flag(self, mock_run, mock_which):
+        """Test traceroute includes IPv4 flag when specified in context."""
+        import os
+        mock_which.return_value = '/usr/bin/traceroute'
+        mock_run.return_value = (0, "traceroute output")
+        
+        cfdiag.utils.set_context({'traceroute_limit': 5, 'ipv4': True})
+        
+        cfdiag.network.step_traceroute("example.com")
+        
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0]
+        cmd = call_args[0]
+        self.assertIn('-4', cmd)
+
+    @patch('cfdiag.network.shutil.which')
+    @patch('cfdiag.network.run_command')
+    def test_step_traceroute_with_ipv6_flag(self, mock_run, mock_which):
+        """Test traceroute includes IPv6 flag when specified in context."""
+        import os
+        mock_which.return_value = '/usr/bin/traceroute'
+        mock_run.return_value = (0, "traceroute output")
+        
+        cfdiag.utils.set_context({'traceroute_limit': 5, 'ipv6': True})
+        
+        cfdiag.network.step_traceroute("example.com")
+        
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0]
+        cmd = call_args[0]
+        self.assertIn('-6', cmd)
+
+    @patch('cfdiag.network.run_command')
+    def test_get_traceroute_hops_uses_context_limit(self, mock_run):
+        """Test get_traceroute_hops uses traceroute_limit from context."""
+        import os
+        mock_run.return_value = (0, "1.2.3.4 (1.2.3.4) 10ms")
+        
+        # Set context with custom limit
+        cfdiag.utils.set_context({'traceroute_limit': 8})
+        
+        cfdiag.network.get_traceroute_hops("example.com")
+        
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0]
+        cmd = call_args[0]
+        if os.name == 'nt':
+            self.assertIn('-h 8', cmd)
+        else:
+            self.assertIn('-m 8', cmd)
+
+    @patch('cfdiag.network.run_command')
+    def test_get_traceroute_hops_defaults_to_15_when_not_set(self, mock_run):
+        """Test get_traceroute_hops defaults to 15 when traceroute_limit not in context."""
+        import os
+        mock_run.return_value = (0, "1.2.3.4 (1.2.3.4) 10ms")
+        
+        # Set context without traceroute_limit
+        cfdiag.utils.set_context({})
+        
+        cfdiag.network.get_traceroute_hops("example.com")
+        
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0]
+        cmd = call_args[0]
+        if os.name == 'nt':
+            self.assertIn('-h 15', cmd)
+        else:
+            self.assertIn('-m 15', cmd)
         
 class TestCoreCLI(unittest.TestCase):
     def setUp(self):
