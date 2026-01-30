@@ -67,6 +67,7 @@ ProbeHTTPResult = Dict[str, Any]  # url, status_code, headers, redirect_chain, t
 ProbeTLSResult = Dict[str, Any]  # handshake_success, cert_valid, protocol_version, cert_expiry, cert_start, cert_issuer, verification_errors, ocsp_stapled, cipher, cert_subject, error
 ProbeMTUResult = Dict[str, Any]  # passed_mtu, fail_point, packets_sent, packets_lost, error
 ProbeOriginResult = Dict[str, Any]  # edge_probe, origin_probe, error
+ProbeCDNReachabilityResult = Dict[str, Any]  # edge, origin, error
 ProbeASNResult = Dict[str, Any]  # ip, asn, country, error, raw_output
 
 # Analysis Result Type (used by analysis.py)

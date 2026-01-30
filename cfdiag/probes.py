@@ -13,7 +13,7 @@ import certifi
 
 from .types import (
     ProbeDNSResult, ProbeHTTPResult, ProbeTLSResult, ProbeMTUResult, 
-    ProbeOriginResult, ProbeASNResult
+    ProbeOriginResult, ProbeASNResult, ProbeCDNReachabilityResult
 )
 
 def _run_cmd(cmd: str, timeout: int = 10) -> Tuple[int, str, str]:
@@ -301,3 +301,34 @@ def probe_asn(ip: str) -> ProbeASNResult:
         result["error"] = str(e)
         
     return result
+
+def probe_cdn_reachability(domain: str, origin_ip: Optional[str] = None) -> ProbeCDNReachabilityResult:
+    try:
+        edge = probe_http(domain)
+        origin = None
+        if origin_ip:
+            origin = probe_http(domain, resolve={domain: origin_ip})
+        
+        return {
+            "edge": edge,
+            "origin": origin,
+            "error": None
+        }
+    except Exception as e:
+        # Requirement 1: Return structured result on exception
+        fallback_edge: ProbeHTTPResult = {
+            "url": domain,
+            "status_code": 0,
+            "headers": {},
+            "redirect_chain": [],
+            "timings": {},
+            "body_sample": "",
+            "is_waf_challenge": False,
+            "http_version": "",
+            "error": str(e)
+        }
+        return {
+            "edge": fallback_edge,
+            "origin": None,
+            "error": str(e)
+        }

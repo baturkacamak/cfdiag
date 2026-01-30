@@ -19,8 +19,8 @@ from .reporting import (
     print_fail, print_info, print_warning, print_cmd
 )
 
-from .probes import probe_dns, probe_http, probe_tls, probe_mtu, probe_origin, probe_asn
-from .analysis import analyze_dns, analyze_http, analyze_tls, analyze_mtu, analyze_origin_reachability, analyze_asn
+from .probes import probe_dns, probe_http, probe_tls, probe_mtu, probe_origin, probe_asn, probe_cdn_reachability
+from .analysis import analyze_dns, analyze_http, analyze_tls, analyze_mtu, analyze_origin_reachability, analyze_asn, analyze_cdn_reachability
 from .types import Severity
 
 def check_dependencies() -> None: 
@@ -1213,3 +1213,67 @@ def run_mtr(domain: str) -> None:
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nMTR stopped.")
+
+def step_cdn_reachability(domain: str, origin_ip: Optional[str] = None) -> None:
+    print_subheader("Advanced: CDN Edge -> Origin Reachability")
+    l = get_logger()
+
+    # Requirement 6: Interactive Mode UX Improvement
+    if not origin_ip:
+        print_info("Direct origin comparison skipped (origin IP not provided).")
+        if l: l.log_file("[INFO] Direct origin comparison skipped (origin IP not provided).")
+    
+    # 1. Probe (Requirement 1: Exception safety handled in probe function)
+    # Double safety here just in case
+    try:
+        probe_res = probe_cdn_reachability(domain, origin_ip)
+    except Exception as e:
+        print_fail(f"Probe failed: {e}")
+        return
+    
+    # 2. Analyze
+    try:
+        analysis = analyze_cdn_reachability(probe_res)
+    except Exception as e:
+        print_fail(f"Analysis failed: {e}")
+        return
+    
+    # 3. Report
+    status = analysis["status"]
+    reason = analysis["human_reason"]
+    meta = analysis["meta"]
+    signals = meta.get("signals", [])
+    
+    if l: l.log_file(f"CDN Reachability Analysis: {analysis}")
+    
+    if status == Severity.PASS:
+        print_success(reason)
+    elif status == Severity.INFO:
+        print_info(reason)
+    elif status == Severity.WARN:
+        print_warning(reason)
+    elif status in [Severity.FAIL, Severity.CRITICAL, Severity.ERROR]:
+         print_fail(reason)
+         
+    if signals:
+        print(f"{Colors.GREY}  Signals Detected:{Colors.ENDC}")
+        for s in signals:
+            print(f"   - {s}")
+            
+    if meta.get("confidence"):
+         print(f"{Colors.GREY}  Confidence: {meta['confidence']}{Colors.ENDC}")
+
+    # Requirement 7: Report Transparency
+    if not origin_ip:
+         print(f"{Colors.GREY}       Comparison: Edge-only analysis (No origin IP){Colors.ENDC}")
+    else:
+         print(f"{Colors.GREY}       Comparison: Edge vs Direct Origin IP ({origin_ip}){Colors.ENDC}")
+
+    # Explicit Warning (Requirement 5 & 6)
+    print(f"\n{Colors.GREY}[NOTE] This is a probabilistic test based on external signals.{Colors.ENDC}")
+    print(f"{Colors.GREY}       False positives possible due to IP allowlists, WAFs, or security plugins.{Colors.ENDC}")
+    print(f"{Colors.GREY}       CDN internal state cannot be fully verified without provider API access.{Colors.ENDC}")
+
+    if l: 
+        l.add_html_step("CDN Reachability", str(status.name), reason)
+

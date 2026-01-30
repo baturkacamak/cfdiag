@@ -19,7 +19,7 @@ from .network import (
     step_traceroute, step_cf_trace, step_cf_forced, step_origin,
     step_alt_ports, step_waf_evasion,
     step_speed, step_doh, step_websocket, detect_cloudflare_usage,
-    run_mtr
+    run_mtr, step_cdn_reachability
 )
 from .probes import probe_dns
 from .system import step_lint_config, step_audit
@@ -203,7 +203,7 @@ def generate_summary(domain, dns_res, http_res, tcp_res, cf_res, mtu_res, ssl_re
     l.log_console(f"\n{Colors.GREY}{SEPARATOR}{Colors.ENDC}", force=True)
     l.log_file(f"\n{SEPARATOR}")
 
-def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False, speed_test: bool=False, dns_benchmark: bool=False, doh_check: bool=False, audit: bool=False, ws_check: bool=False) -> Dict[str, Any]:
+def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Optional[str]=None, export_metrics: bool=False, speed_test: bool=False, dns_benchmark: bool=False, doh_check: bool=False, audit: bool=False, ws_check: bool=False, cdn_check: bool=False) -> Dict[str, Any]:
     reports_dir = "reports"
     domain_dir = os.path.join(reports_dir, domain)
     if not os.path.exists(domain_dir): os.makedirs(domain_dir)
@@ -342,6 +342,9 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
     if origin_ip:
          step_origin(domain, origin_ip)
 
+    if cdn_check:
+        step_cdn_reachability(domain, origin_ip)
+
     if l:
         l.save_to_file(log_file)
         l.save_html(os.path.join(domain_dir, f"{timestamp}.html"))
@@ -365,11 +368,11 @@ def run_diagnostics(domain: str, origin_ip: Optional[str]=None, expected_ns: Opt
         }
     }
 
-def run_diagnostics_wrapper(domain: str, origin: Optional[str], context: Dict[str, Any], expected_ns: Optional[str] = None, export_metrics: bool = False) -> Dict[str, Any]:
+def run_diagnostics_wrapper(domain: str, origin: Optional[str], context: Dict[str, Any], expected_ns: Optional[str] = None, export_metrics: bool = False, cdn_check: bool = False) -> Dict[str, Any]:
     l = FileLogger(verbose=True, silent=False)
     set_logger(l)
     set_context(context)
-    return run_diagnostics(domain, origin, expected_ns, export_metrics=export_metrics)
+    return run_diagnostics(domain, origin, expected_ns, export_metrics=export_metrics, cdn_check=cdn_check)
 
 def interactive_mode() -> None:
     """Interactive wizard mode for easier usage."""
@@ -407,6 +410,9 @@ def interactive_mode() -> None:
     # Ask for advanced options
     metrics_input = input(f"{Colors.OKBLUE}Export Prometheus metrics? (y/N): {Colors.ENDC}").strip().lower()
     export_metrics = metrics_input in ['y', 'yes']
+
+    cdn_input = input(f"{Colors.OKBLUE}Run advanced CDN reachability test? (y/N): {Colors.ENDC}").strip().lower()
+    cdn_check = cdn_input in ['y', 'yes']
     
     # Setup context
     ctx = {
@@ -425,7 +431,7 @@ def interactive_mode() -> None:
     set_context(ctx)
     
     # Run diagnostics
-    result = run_diagnostics(domain, origin, expected_ns, export_metrics=export_metrics)
+    result = run_diagnostics(domain, origin, expected_ns, export_metrics=export_metrics, cdn_check=cdn_check)
     
     # Save additional formats
     if format_input in ["3", "5"]:
@@ -560,6 +566,8 @@ For more information, visit: https://github.com/baturkacamak/cfdiag
                                help="Run interactive MTR (My Traceroute) with real-time statistics")
     advanced_group.add_argument("--watch", action="store_true",
                                help="Run diagnostics continuously, updating every 5 seconds (Ctrl+C to stop)")
+    advanced_group.add_argument("--cdn-origin-test", action="store_true",
+                               help="Run advanced CDN Edge -> Origin reachability test (probabilistic)")
     
     # Output formats
     output_group = parser.add_argument_group('Output Formats')
@@ -651,7 +659,7 @@ For more information, visit: https://github.com/baturkacamak/cfdiag
         print(f"\n{Colors.BOLD}{Colors.HEADER}=== BATCH MODE STARTED ({len(domains)} domains, {args.threads} threads) ==={Colors.ENDC}\n")
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
-            futures = {executor.submit(run_diagnostics_wrapper, d, origin, ctx, expected_ns, args.metrics): d for d in domains}
+            futures = {executor.submit(run_diagnostics_wrapper, d, origin, ctx, expected_ns, args.metrics, args.cdn_origin_test): d for d in domains}
             for future in concurrent.futures.as_completed(futures):
                 try:
                     res = future.result()
@@ -685,7 +693,8 @@ For more information, visit: https://github.com/baturkacamak/cfdiag
                         domain.replace("http://", "").replace("https://", "").strip("/"),
                         origin,
                         expected_ns,
-                        export_metrics=args.metrics
+                        export_metrics=args.metrics,
+                        cdn_check=args.cdn_origin_test
                     )
                     time.sleep(5)
             except KeyboardInterrupt:
@@ -696,7 +705,8 @@ For more information, visit: https://github.com/baturkacamak/cfdiag
                 domain.replace("http://", "").replace("https://", "").strip("/"),
                 origin,
                 expected_ns,
-                export_metrics=args.metrics
+                export_metrics=args.metrics,
+                cdn_check=args.cdn_origin_test
             )
             
             if args.markdown:
