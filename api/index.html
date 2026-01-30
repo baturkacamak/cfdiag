@@ -1,0 +1,2110 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Professional Cloudflare & Connectivity Diagnostic Tool">
+      
+      
+        <meta name="author" content="Batur Kacamak">
+      
+      
+      
+        <link rel="prev" href="../usage/">
+      
+      
+        <link rel="next" href="../changelog/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Library API - cfdiag</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#library-api" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="cfdiag" class="md-header__button md-logo" aria-label="cfdiag" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            cfdiag
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Library API
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/baturkacamak/cfdiag" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    baturkacamak/cfdiag
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="cfdiag" class="md-nav__button md-logo" aria-label="cfdiag" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    cfdiag
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/baturkacamak/cfdiag" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    baturkacamak/cfdiag
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Library API
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Library API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        core
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.core.interactive_mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        interactive_mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.detect_cloudflare_usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        detect_cloudflare_usage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.detect_waf_from_response" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        detect_waf_from_response
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_alt_ports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_alt_ports
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_cf_forced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_cf_forced
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_cf_trace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_cf_trace
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_doh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_doh
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_http3_udp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_http3_udp
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_ocsp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_ocsp
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_security_headers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_security_headers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_tcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_tcp
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_traceroute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_traceroute
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reporting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.reporting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reporting
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        core
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.core.interactive_mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        interactive_mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.detect_cloudflare_usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        detect_cloudflare_usage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.detect_waf_from_response" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        detect_waf_from_response
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_alt_ports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_alt_ports
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_cf_forced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_cf_forced
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_cf_trace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_cf_trace
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_doh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_doh
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_http3_udp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_http3_udp
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_ocsp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_ocsp
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_security_headers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_security_headers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_tcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_tcp
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.network.step_traceroute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step_traceroute
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reporting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cfdiag.reporting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reporting
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="library-api">Library API</h1>
+<p>You can use <code>cfdiag</code> as a Python library in your own tools.</p>
+<h2 id="core">Core</h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="cfdiag.core"></a>
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.core.interactive_mode" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">interactive_mode</span><span class="p">()</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Interactive wizard mode for easier usage.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/core.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span>
+<span class="normal">399</span>
+<span class="normal">400</span>
+<span class="normal">401</span>
+<span class="normal">402</span>
+<span class="normal">403</span>
+<span class="normal">404</span>
+<span class="normal">405</span>
+<span class="normal">406</span>
+<span class="normal">407</span>
+<span class="normal">408</span>
+<span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span>
+<span class="normal">412</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span>
+<span class="normal">416</span>
+<span class="normal">417</span>
+<span class="normal">418</span>
+<span class="normal">419</span>
+<span class="normal">420</span>
+<span class="normal">421</span>
+<span class="normal">422</span>
+<span class="normal">423</span>
+<span class="normal">424</span>
+<span class="normal">425</span>
+<span class="normal">426</span>
+<span class="normal">427</span>
+<span class="normal">428</span>
+<span class="normal">429</span>
+<span class="normal">430</span>
+<span class="normal">431</span>
+<span class="normal">432</span>
+<span class="normal">433</span>
+<span class="normal">434</span>
+<span class="normal">435</span>
+<span class="normal">436</span>
+<span class="normal">437</span>
+<span class="normal">438</span>
+<span class="normal">439</span>
+<span class="normal">440</span>
+<span class="normal">441</span>
+<span class="normal">442</span>
+<span class="normal">443</span>
+<span class="normal">444</span>
+<span class="normal">445</span>
+<span class="normal">446</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">interactive_mode</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Interactive wizard mode for easier usage.&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">BOLD</span><span class="si">}{</span><span class="n">Colors</span><span class="o">.</span><span class="n">HEADER</span><span class="si">}</span><span class="s2">=== cfdiag Interactive Mode ===</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">ENDC</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Get domain</span>
+    <span class="n">domain</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">OKBLUE</span><span class="si">}</span><span class="s2">Enter domain to diagnose: </span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">ENDC</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">domain</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">FAIL</span><span class="si">}</span><span class="s2">Domain is required.</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">ENDC</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">domain</span> <span class="o">=</span> <span class="n">domain</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;http://&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;https://&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Ask for origin IP</span>
+    <span class="n">origin_input</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">OKBLUE</span><span class="si">}</span><span class="s2">Origin IP (optional, press Enter to skip): </span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">ENDC</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">origin</span> <span class="o">=</span> <span class="n">origin_input</span> <span class="k">if</span> <span class="n">origin_input</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="c1"># Ask for expected nameserver</span>
+    <span class="n">expect_input</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">OKBLUE</span><span class="si">}</span><span class="s2">Expected nameserver substring for propagation check (optional): </span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">ENDC</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">expected_ns</span> <span class="o">=</span> <span class="n">expect_input</span> <span class="k">if</span> <span class="n">expect_input</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="c1"># Ask for verbose mode</span>
+    <span class="n">verbose_input</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">OKBLUE</span><span class="si">}</span><span class="s2">Enable verbose output? (y/N): </span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">ENDC</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">verbose</span> <span class="o">=</span> <span class="n">verbose_input</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">,</span> <span class="s1">&#39;yes&#39;</span><span class="p">]</span>
+
+    <span class="c1"># Ask for output format</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">OKBLUE</span><span class="si">}</span><span class="s2">Output format:&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  1. Standard (default)&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  2. JSON&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  3. Markdown&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  4. JUnit XML&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  5. All formats</span><span class="si">{Colors.ENDC}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">format_input</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">OKBLUE</span><span class="si">}</span><span class="s2">Choose (1-5, default 1): </span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">ENDC</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="s2">&quot;1&quot;</span>
+
+    <span class="c1"># Ask for advanced options</span>
+    <span class="n">metrics_input</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">OKBLUE</span><span class="si">}</span><span class="s2">Export Prometheus metrics? (y/N): </span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">ENDC</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">export_metrics</span> <span class="o">=</span> <span class="n">metrics_input</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">,</span> <span class="s1">&#39;yes&#39;</span><span class="p">]</span>
+
+    <span class="n">cdn_input</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">OKBLUE</span><span class="si">}</span><span class="s2">Run advanced CDN reachability test? (y/N): </span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">ENDC</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">cdn_check</span> <span class="o">=</span> <span class="n">cdn_input</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">,</span> <span class="s1">&#39;yes&#39;</span><span class="p">]</span>
+
+    <span class="c1"># Setup context</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;ipv4&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s1">&#39;ipv6&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s1">&#39;proxy&#39;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s1">&#39;keylog_file&#39;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s1">&#39;headers&#39;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s1">&#39;timeout&#39;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="s1">&#39;traceroute_limit&#39;</span><span class="p">:</span> <span class="mi">5</span>
+    <span class="p">}</span>
+
+    <span class="n">silent</span> <span class="o">=</span> <span class="n">format_input</span> <span class="o">==</span> <span class="s2">&quot;2&quot;</span>  <span class="c1"># JSON mode is silent</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="n">FileLogger</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span> <span class="n">silent</span><span class="o">=</span><span class="n">silent</span><span class="p">)</span>
+    <span class="n">set_logger</span><span class="p">(</span><span class="n">l</span><span class="p">)</span>
+    <span class="n">set_context</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+
+    <span class="c1"># Run diagnostics</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">run_diagnostics</span><span class="p">(</span><span class="n">domain</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">expected_ns</span><span class="p">,</span> <span class="n">export_metrics</span><span class="o">=</span><span class="n">export_metrics</span><span class="p">,</span> <span class="n">cdn_check</span><span class="o">=</span><span class="n">cdn_check</span><span class="p">)</span>
+
+    <span class="c1"># Save additional formats</span>
+    <span class="k">if</span> <span class="n">format_input</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;3&quot;</span><span class="p">,</span> <span class="s2">&quot;5&quot;</span><span class="p">]:</span>
+        <span class="n">l</span><span class="o">.</span><span class="n">save_markdown</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;reports&quot;</span><span class="p">,</span> <span class="n">domain</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1">_%H-%M-%S&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">.md&quot;</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">format_input</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;4&quot;</span><span class="p">,</span> <span class="s2">&quot;5&quot;</span><span class="p">]:</span>
+        <span class="n">l</span><span class="o">.</span><span class="n">save_junit</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;reports&quot;</span><span class="p">,</span> <span class="n">domain</span><span class="p">,</span> <span class="s2">&quot;junit.xml&quot;</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">format_input</span> <span class="o">==</span> <span class="s2">&quot;2&quot;</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">4</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">verbose</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">OKGREEN</span><span class="si">}</span><span class="s2">✓ Diagnostic complete! Reports saved to reports/</span><span class="si">{</span><span class="n">domain</span><span class="si">}</span><span class="s2">/ folder.</span><span class="si">{</span><span class="n">Colors</span><span class="o">.</span><span class="n">ENDC</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="network">Network</h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="cfdiag.network"></a>
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.detect_cloudflare_usage" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">detect_cloudflare_usage</span><span class="p">(</span><span class="n">domain</span><span class="p">,</span> <span class="n">ipv4</span><span class="p">,</span> <span class="n">ipv6</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+
+
+<details class="determine-whether-the-target-is-using-cloudflare-based-on" open>
+  <summary>Determine whether the target is using Cloudflare based on</summary>
+  <p>1) Resolved A/AAAA records falling into known Cloudflare IP ranges.
+2) NS records containing 'cloudflare.com'.</p>
+</details>
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">detect_cloudflare_usage</span><span class="p">(</span><span class="n">domain</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ipv4</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">ipv6</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Determine whether the target is using Cloudflare based on:</span>
+<span class="sd">      1) Resolved A/AAAA records falling into known Cloudflare IP ranges.</span>
+<span class="sd">      2) NS records containing &#39;cloudflare.com&#39;.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># 1. IP range check (A/AAAA records)</span>
+    <span class="k">for</span> <span class="n">ip</span> <span class="ow">in</span> <span class="n">ipv4</span> <span class="o">+</span> <span class="n">ipv6</span><span class="p">:</span>
+        <span class="c1"># Skip obvious private / loopback ranges – they are never Cloudflare edges.</span>
+        <span class="k">if</span> <span class="n">ip</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s2">&quot;192.168.&quot;</span><span class="p">,</span> <span class="s2">&quot;10.&quot;</span><span class="p">,</span> <span class="s2">&quot;127.&quot;</span><span class="p">,</span> <span class="s2">&quot;::1&quot;</span><span class="p">)):</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">_ip_in_cidr_ranges</span><span class="p">(</span><span class="n">ip</span><span class="p">,</span> <span class="n">CLOUDFLARE_IPS</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="c1"># 2. NS record check for &quot;cloudflare.com&quot;</span>
+    <span class="n">ns_output</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="s2">&quot;dig&quot;</span><span class="p">):</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;dig NS </span><span class="si">{</span><span class="n">domain</span><span class="si">}</span><span class="s2"> +short&quot;</span>
+    <span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;nt&#39;</span><span class="p">:</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;nslookup -type=NS </span><span class="si">{</span><span class="n">domain</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="k">if</span> <span class="n">cmd</span><span class="p">:</span>
+        <span class="n">code</span><span class="p">,</span> <span class="n">out</span> <span class="o">=</span> <span class="n">run_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">show_output</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">log_output_to_file</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">code</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">ns_output</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="s2">&quot;cloudflare.com&quot;</span> <span class="ow">in</span> <span class="n">ns_output</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">return</span> <span class="kc">False</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.detect_waf_from_response" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">detect_waf_from_response</span><span class="p">(</span><span class="n">status_code</span><span class="p">,</span> <span class="n">headers</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Detect WAF presence from HTTP response headers and body.</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="typing.Tuple">Tuple</span>[<span title="bool">bool</span>, <span title="typing.Optional">Optional</span>[<span title="str">str</span>], <span title="str">str</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Tuple of (is_waf_detected, waf_name_or_none, detection_reason)</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">592</span>
+<span class="normal">593</span>
+<span class="normal">594</span>
+<span class="normal">595</span>
+<span class="normal">596</span>
+<span class="normal">597</span>
+<span class="normal">598</span>
+<span class="normal">599</span>
+<span class="normal">600</span>
+<span class="normal">601</span>
+<span class="normal">602</span>
+<span class="normal">603</span>
+<span class="normal">604</span>
+<span class="normal">605</span>
+<span class="normal">606</span>
+<span class="normal">607</span>
+<span class="normal">608</span>
+<span class="normal">609</span>
+<span class="normal">610</span>
+<span class="normal">611</span>
+<span class="normal">612</span>
+<span class="normal">613</span>
+<span class="normal">614</span>
+<span class="normal">615</span>
+<span class="normal">616</span>
+<span class="normal">617</span>
+<span class="normal">618</span>
+<span class="normal">619</span>
+<span class="normal">620</span>
+<span class="normal">621</span>
+<span class="normal">622</span>
+<span class="normal">623</span>
+<span class="normal">624</span>
+<span class="normal">625</span>
+<span class="normal">626</span>
+<span class="normal">627</span>
+<span class="normal">628</span>
+<span class="normal">629</span>
+<span class="normal">630</span>
+<span class="normal">631</span>
+<span class="normal">632</span>
+<span class="normal">633</span>
+<span class="normal">634</span>
+<span class="normal">635</span>
+<span class="normal">636</span>
+<span class="normal">637</span>
+<span class="normal">638</span>
+<span class="normal">639</span>
+<span class="normal">640</span>
+<span class="normal">641</span>
+<span class="normal">642</span>
+<span class="normal">643</span>
+<span class="normal">644</span>
+<span class="normal">645</span>
+<span class="normal">646</span>
+<span class="normal">647</span>
+<span class="normal">648</span>
+<span class="normal">649</span>
+<span class="normal">650</span>
+<span class="normal">651</span>
+<span class="normal">652</span>
+<span class="normal">653</span>
+<span class="normal">654</span>
+<span class="normal">655</span>
+<span class="normal">656</span>
+<span class="normal">657</span>
+<span class="normal">658</span>
+<span class="normal">659</span>
+<span class="normal">660</span>
+<span class="normal">661</span>
+<span class="normal">662</span>
+<span class="normal">663</span>
+<span class="normal">664</span>
+<span class="normal">665</span>
+<span class="normal">666</span>
+<span class="normal">667</span>
+<span class="normal">668</span>
+<span class="normal">669</span>
+<span class="normal">670</span>
+<span class="normal">671</span>
+<span class="normal">672</span>
+<span class="normal">673</span>
+<span class="normal">674</span>
+<span class="normal">675</span>
+<span class="normal">676</span>
+<span class="normal">677</span>
+<span class="normal">678</span>
+<span class="normal">679</span>
+<span class="normal">680</span>
+<span class="normal">681</span>
+<span class="normal">682</span>
+<span class="normal">683</span>
+<span class="normal">684</span>
+<span class="normal">685</span>
+<span class="normal">686</span>
+<span class="normal">687</span>
+<span class="normal">688</span>
+<span class="normal">689</span>
+<span class="normal">690</span>
+<span class="normal">691</span>
+<span class="normal">692</span>
+<span class="normal">693</span>
+<span class="normal">694</span>
+<span class="normal">695</span>
+<span class="normal">696</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">detect_waf_from_response</span><span class="p">(</span><span class="n">status_code</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">headers</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="n">body</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Detect WAF presence from HTTP response headers and body.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Tuple of (is_waf_detected, waf_name_or_none, detection_reason)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">headers_lower</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span> <span class="n">v</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">headers</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+    <span class="n">body_lower</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+    <span class="c1"># Known WAF header signatures (key: value patterns or just header keys)</span>
+    <span class="n">waf_header_signatures</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;cloudflare&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">&#39;server&#39;</span><span class="p">,</span> <span class="s1">&#39;cloudflare&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">&#39;cf-ray&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">&#39;cf-cache-status&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">&#39;cf-request-id&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;sucuri&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">&#39;x-sucuri-id&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">&#39;x-sucuri-cache&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;aws&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">&#39;x-amzn-requestid&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">&#39;x-amzn-trace-id&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">&#39;server&#39;</span><span class="p">,</span> <span class="s1">&#39;awsalb&#39;</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;incapsula&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">&#39;x-iinfo&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">&#39;x-cdn&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;akamai&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">&#39;x-akamai-transformed&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">&#39;server&#39;</span><span class="p">,</span> <span class="s1">&#39;akamai&#39;</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;fastly&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">&#39;x-fastly-request-id&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">&#39;server&#39;</span><span class="p">,</span> <span class="s1">&#39;fastly&#39;</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;imperva&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">&#39;x-imforwards&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">&#39;x-cdn-srv&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="p">],</span>
+    <span class="p">}</span>
+
+    <span class="c1"># Known WAF body signatures</span>
+    <span class="n">waf_body_signatures</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s1">&#39;captcha&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;challenge&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;attention required&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;security check&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;please turn javascript on&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;access denied by security policy&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;cloudflare&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;sucuri&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;incapsula&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;imperva&#39;</span><span class="p">,</span>
+    <span class="p">]</span>
+
+    <span class="n">detected_waf</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">detection_reason</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="c1"># Check headers for WAF signatures</span>
+    <span class="k">for</span> <span class="n">waf_name</span><span class="p">,</span> <span class="n">sigs</span> <span class="ow">in</span> <span class="n">waf_header_signatures</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">key_pattern</span><span class="p">,</span> <span class="n">value_pattern</span> <span class="ow">in</span> <span class="n">sigs</span><span class="p">:</span>
+            <span class="n">header_key_lower</span> <span class="o">=</span> <span class="n">key_pattern</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">header_key_lower</span> <span class="ow">in</span> <span class="n">headers_lower</span><span class="p">:</span>
+                <span class="n">header_value_lower</span> <span class="o">=</span> <span class="n">headers_lower</span><span class="p">[</span><span class="n">header_key_lower</span><span class="p">]</span>
+                <span class="c1"># If value pattern is specified, check it matches</span>
+                <span class="k">if</span> <span class="n">value_pattern</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">value_pattern</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">header_value_lower</span><span class="p">:</span>
+                    <span class="n">detected_waf</span> <span class="o">=</span> <span class="n">waf_name</span><span class="o">.</span><span class="n">capitalize</span><span class="p">()</span>
+                    <span class="n">detection_reason</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Header signature: </span><span class="si">{</span><span class="n">key_pattern</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">detected_waf</span><span class="p">,</span> <span class="n">detection_reason</span>
+
+    <span class="c1"># Check body for WAF signatures</span>
+    <span class="c1"># First check for specific WAF names in body (more specific)</span>
+    <span class="k">if</span> <span class="s1">&#39;cloudflare&#39;</span> <span class="ow">in</span> <span class="n">body_lower</span><span class="p">:</span>
+        <span class="n">detected_waf</span> <span class="o">=</span> <span class="s2">&quot;Cloudflare&quot;</span>
+        <span class="n">detection_reason</span> <span class="o">=</span> <span class="s2">&quot;Body signature: cloudflare&quot;</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">detected_waf</span><span class="p">,</span> <span class="n">detection_reason</span>
+    <span class="k">elif</span> <span class="s1">&#39;sucuri&#39;</span> <span class="ow">in</span> <span class="n">body_lower</span><span class="p">:</span>
+        <span class="n">detected_waf</span> <span class="o">=</span> <span class="s2">&quot;Sucuri&quot;</span>
+        <span class="n">detection_reason</span> <span class="o">=</span> <span class="s2">&quot;Body signature: sucuri&quot;</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">detected_waf</span><span class="p">,</span> <span class="n">detection_reason</span>
+    <span class="k">elif</span> <span class="s1">&#39;incapsula&#39;</span> <span class="ow">in</span> <span class="n">body_lower</span><span class="p">:</span>
+        <span class="n">detected_waf</span> <span class="o">=</span> <span class="s2">&quot;Incapsula&quot;</span>
+        <span class="n">detection_reason</span> <span class="o">=</span> <span class="s2">&quot;Body signature: incapsula&quot;</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">detected_waf</span><span class="p">,</span> <span class="n">detection_reason</span>
+    <span class="k">elif</span> <span class="s1">&#39;imperva&#39;</span> <span class="ow">in</span> <span class="n">body_lower</span><span class="p">:</span>
+        <span class="n">detected_waf</span> <span class="o">=</span> <span class="s2">&quot;Imperva&quot;</span>
+        <span class="n">detection_reason</span> <span class="o">=</span> <span class="s2">&quot;Body signature: imperva&quot;</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">detected_waf</span><span class="p">,</span> <span class="n">detection_reason</span>
+
+    <span class="c1"># Then check for generic WAF signatures</span>
+    <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">waf_body_signatures</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">body_lower</span> <span class="ow">and</span> <span class="n">sig</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;cloudflare&#39;</span><span class="p">,</span> <span class="s1">&#39;sucuri&#39;</span><span class="p">,</span> <span class="s1">&#39;incapsula&#39;</span><span class="p">,</span> <span class="s1">&#39;imperva&#39;</span><span class="p">]:</span>
+            <span class="n">detected_waf</span> <span class="o">=</span> <span class="s2">&quot;Generic&quot;</span>
+            <span class="n">detection_reason</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Body signature: </span><span class="si">{</span><span class="n">sig</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">detected_waf</span><span class="p">,</span> <span class="n">detection_reason</span>
+
+    <span class="c1"># If status is 403/406 but no WAF signatures found, mark as unconfirmed</span>
+    <span class="k">if</span> <span class="n">status_code</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">403</span><span class="p">,</span> <span class="mi">406</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;Unconfirmed (No WAF signatures found)&quot;</span>
+
+    <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;None&quot;</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.step_alt_ports" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">step_alt_ports</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Check alternative ports</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1080</span>
+<span class="normal">1081</span>
+<span class="normal">1082</span>
+<span class="normal">1083</span>
+<span class="normal">1084</span>
+<span class="normal">1085</span>
+<span class="normal">1086</span>
+<span class="normal">1087</span>
+<span class="normal">1088</span>
+<span class="normal">1089</span>
+<span class="normal">1090</span>
+<span class="normal">1091</span>
+<span class="normal">1092</span>
+<span class="normal">1093</span>
+<span class="normal">1094</span>
+<span class="normal">1095</span>
+<span class="normal">1096</span>
+<span class="normal">1097</span>
+<span class="normal">1098</span>
+<span class="normal">1099</span>
+<span class="normal">1100</span>
+<span class="normal">1101</span>
+<span class="normal">1102</span>
+<span class="normal">1103</span>
+<span class="normal">1104</span>
+<span class="normal">1105</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">step_alt_ports</span><span class="p">(</span><span class="n">domain</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check alternative ports&quot;&quot;&quot;</span>
+    <span class="n">print_subheader</span><span class="p">(</span><span class="s2">&quot;16. Alternative Ports&quot;</span><span class="p">)</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="n">get_logger</span><span class="p">()</span>
+    <span class="n">alt_ports</span> <span class="o">=</span> <span class="p">[</span><span class="mi">8080</span><span class="p">,</span> <span class="mi">8443</span><span class="p">,</span> <span class="mi">8081</span><span class="p">]</span>
+    <span class="n">open_ports</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">port</span> <span class="ow">in</span> <span class="n">alt_ports</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">sock</span> <span class="o">=</span> <span class="n">socket</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">socket</span><span class="o">.</span><span class="n">SOCK_STREAM</span><span class="p">)</span>
+            <span class="n">sock</span><span class="o">.</span><span class="n">settimeout</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">sock</span><span class="o">.</span><span class="n">connect_ex</span><span class="p">((</span><span class="n">domain</span><span class="p">,</span> <span class="n">port</span><span class="p">))</span>
+            <span class="n">sock</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">result</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">open_ports</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">port</span><span class="p">)</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+    <span class="k">if</span> <span class="n">open_ports</span><span class="p">:</span>
+        <span class="n">print_success</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Alternative ports open: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span><span class="w"> </span><span class="n">open_ports</span><span class="p">))</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;Alt Ports&quot;</span><span class="p">,</span> <span class="s2">&quot;PASS&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Open: </span><span class="si">{</span><span class="n">open_ports</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">open_ports</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">print_info</span><span class="p">(</span><span class="s2">&quot;No alternative ports open&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;Alt Ports&quot;</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">,</span> <span class="s2">&quot;No alternative ports&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="p">[]</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.step_cf_forced" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">step_cf_forced</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Check if forced to use Cloudflare</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1074</span>
+<span class="normal">1075</span>
+<span class="normal">1076</span>
+<span class="normal">1077</span>
+<span class="normal">1078</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">step_cf_forced</span><span class="p">(</span><span class="n">domain</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if forced to use Cloudflare&quot;&quot;&quot;</span>
+    <span class="n">print_subheader</span><span class="p">(</span><span class="s2">&quot;14. CF Forced Check&quot;</span><span class="p">)</span>
+    <span class="c1"># This is an environment check, not a network check</span>
+    <span class="k">return</span> <span class="kc">False</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.step_cf_trace" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">step_cf_trace</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Check Cloudflare trace endpoint</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1057</span>
+<span class="normal">1058</span>
+<span class="normal">1059</span>
+<span class="normal">1060</span>
+<span class="normal">1061</span>
+<span class="normal">1062</span>
+<span class="normal">1063</span>
+<span class="normal">1064</span>
+<span class="normal">1065</span>
+<span class="normal">1066</span>
+<span class="normal">1067</span>
+<span class="normal">1068</span>
+<span class="normal">1069</span>
+<span class="normal">1070</span>
+<span class="normal">1071</span>
+<span class="normal">1072</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">step_cf_trace</span><span class="p">(</span><span class="n">domain</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check Cloudflare trace endpoint&quot;&quot;&quot;</span>
+    <span class="n">print_subheader</span><span class="p">(</span><span class="s2">&quot;13. CF Trace&quot;</span><span class="p">)</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="n">get_logger</span><span class="p">()</span>
+    <span class="n">flags</span> <span class="o">=</span> <span class="n">get_curl_flags</span><span class="p">()</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;curl</span><span class="si">{</span><span class="n">flags</span><span class="si">}</span><span class="s2"> -s --connect-timeout 5 https://</span><span class="si">{</span><span class="n">domain</span><span class="si">}</span><span class="s2">/cdn-cgi/trace&quot;</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">output</span> <span class="o">=</span> <span class="n">run_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">show_output</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">log_output_to_file</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">code</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">output</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="n">print_success</span><span class="p">(</span><span class="s2">&quot;CF Trace: Available&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;CF Trace&quot;</span><span class="p">,</span> <span class="s2">&quot;PASS&quot;</span><span class="p">,</span> <span class="s2">&quot;Trace endpoint accessible&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="p">{}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">print_info</span><span class="p">(</span><span class="s2">&quot;CF Trace: Not available (not using Cloudflare or endpoint blocked)&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;CF Trace&quot;</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">,</span> <span class="s2">&quot;Trace endpoint not accessible&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="p">{}</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.step_doh" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">step_doh</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Check DNS over HTTPS</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1107</span>
+<span class="normal">1108</span>
+<span class="normal">1109</span>
+<span class="normal">1110</span>
+<span class="normal">1111</span>
+<span class="normal">1112</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">step_doh</span><span class="p">(</span><span class="n">domain</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check DNS over HTTPS&quot;&quot;&quot;</span>
+    <span class="n">print_subheader</span><span class="p">(</span><span class="s2">&quot;DNS over HTTPS Check&quot;</span><span class="p">)</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="n">get_logger</span><span class="p">()</span>
+    <span class="n">print_info</span><span class="p">(</span><span class="s2">&quot;DoH check not yet fully implemented&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;DoH&quot;</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">,</span> <span class="s2">&quot;Check not implemented&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.step_http3_udp" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">step_http3_udp</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Check HTTP/3 (QUIC) support</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">923</span>
+<span class="normal">924</span>
+<span class="normal">925</span>
+<span class="normal">926</span>
+<span class="normal">927</span>
+<span class="normal">928</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">step_http3_udp</span><span class="p">(</span><span class="n">domain</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check HTTP/3 (QUIC) support&quot;&quot;&quot;</span>
+    <span class="n">print_subheader</span><span class="p">(</span><span class="s2">&quot;8. HTTP/3 (QUIC) Check&quot;</span><span class="p">)</span>
+    <span class="n">print_info</span><span class="p">(</span><span class="s2">&quot;HTTP/3 check not yet fully implemented&quot;</span><span class="p">)</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="n">get_logger</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;HTTP/3&quot;</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">,</span> <span class="s2">&quot;Check not implemented&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.step_ocsp" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">step_ocsp</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Check OCSP stapling</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">930</span>
+<span class="normal">931</span>
+<span class="normal">932</span>
+<span class="normal">933</span>
+<span class="normal">934</span>
+<span class="normal">935</span>
+<span class="normal">936</span>
+<span class="normal">937</span>
+<span class="normal">938</span>
+<span class="normal">939</span>
+<span class="normal">940</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">step_ocsp</span><span class="p">(</span><span class="n">domain</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check OCSP stapling&quot;&quot;&quot;</span>
+    <span class="n">print_subheader</span><span class="p">(</span><span class="s2">&quot;9.5 OCSP Stapling Check&quot;</span><span class="p">)</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="n">get_logger</span><span class="p">()</span>
+    <span class="n">probe_res</span> <span class="o">=</span> <span class="n">probe_tls</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">probe_res</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ocsp_stapled&quot;</span><span class="p">):</span>
+        <span class="n">print_success</span><span class="p">(</span><span class="s2">&quot;OCSP Stapling: Enabled&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;OCSP&quot;</span><span class="p">,</span> <span class="s2">&quot;PASS&quot;</span><span class="p">,</span> <span class="s2">&quot;OCSP Stapling enabled&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">print_info</span><span class="p">(</span><span class="s2">&quot;OCSP Stapling: Not enabled&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;OCSP&quot;</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">,</span> <span class="s2">&quot;OCSP Stapling not enabled&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.step_security_headers" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">step_security_headers</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Check security headers (CSP, HSTS, etc.)</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">889</span>
+<span class="normal">890</span>
+<span class="normal">891</span>
+<span class="normal">892</span>
+<span class="normal">893</span>
+<span class="normal">894</span>
+<span class="normal">895</span>
+<span class="normal">896</span>
+<span class="normal">897</span>
+<span class="normal">898</span>
+<span class="normal">899</span>
+<span class="normal">900</span>
+<span class="normal">901</span>
+<span class="normal">902</span>
+<span class="normal">903</span>
+<span class="normal">904</span>
+<span class="normal">905</span>
+<span class="normal">906</span>
+<span class="normal">907</span>
+<span class="normal">908</span>
+<span class="normal">909</span>
+<span class="normal">910</span>
+<span class="normal">911</span>
+<span class="normal">912</span>
+<span class="normal">913</span>
+<span class="normal">914</span>
+<span class="normal">915</span>
+<span class="normal">916</span>
+<span class="normal">917</span>
+<span class="normal">918</span>
+<span class="normal">919</span>
+<span class="normal">920</span>
+<span class="normal">921</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">step_security_headers</span><span class="p">(</span><span class="n">domain</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check security headers (CSP, HSTS, etc.)&quot;&quot;&quot;</span>
+    <span class="n">print_subheader</span><span class="p">(</span><span class="s2">&quot;7.5. Security Header Audit&quot;</span><span class="p">)</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="n">get_logger</span><span class="p">()</span>
+    <span class="n">flags</span> <span class="o">=</span> <span class="n">get_curl_flags</span><span class="p">()</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;curl</span><span class="si">{</span><span class="n">flags</span><span class="si">}</span><span class="s2"> -I -s --connect-timeout 10 https://</span><span class="si">{</span><span class="n">domain</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="n">code</span><span class="p">,</span> <span class="n">output</span> <span class="o">=</span> <span class="n">run_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">show_output</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">log_output_to_file</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">headers</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">output</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+        <span class="k">if</span> <span class="s1">&#39;:&#39;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+            <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">headers</span><span class="p">[</span><span class="n">k</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()]</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+    <span class="n">security_headers</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;strict-transport-security&#39;</span><span class="p">:</span> <span class="s1">&#39;HSTS&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;content-security-policy&#39;</span><span class="p">:</span> <span class="s1">&#39;CSP&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;x-frame-options&#39;</span><span class="p">:</span> <span class="s1">&#39;X-Frame-Options&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;x-content-type-options&#39;</span><span class="p">:</span> <span class="s1">&#39;X-Content-Type-Options&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;referrer-policy&#39;</span><span class="p">:</span> <span class="s1">&#39;Referrer-Policy&#39;</span>
+    <span class="p">}</span>
+
+    <span class="n">found</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">header</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">security_headers</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">header</span> <span class="ow">in</span> <span class="n">headers</span><span class="p">:</span>
+            <span class="n">found</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">found</span><span class="p">:</span>
+        <span class="n">print_success</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Security Headers: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">found</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;Security Headers&quot;</span><span class="p">,</span> <span class="s2">&quot;PASS&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Found: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">found</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">print_warning</span><span class="p">(</span><span class="s2">&quot;No security headers found&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;Security Headers&quot;</span><span class="p">,</span> <span class="s2">&quot;WARN&quot;</span><span class="p">,</span> <span class="s2">&quot;No security headers detected&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.step_tcp" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">step_tcp</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Check TCP connectivity</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">942</span>
+<span class="normal">943</span>
+<span class="normal">944</span>
+<span class="normal">945</span>
+<span class="normal">946</span>
+<span class="normal">947</span>
+<span class="normal">948</span>
+<span class="normal">949</span>
+<span class="normal">950</span>
+<span class="normal">951</span>
+<span class="normal">952</span>
+<span class="normal">953</span>
+<span class="normal">954</span>
+<span class="normal">955</span>
+<span class="normal">956</span>
+<span class="normal">957</span>
+<span class="normal">958</span>
+<span class="normal">959</span>
+<span class="normal">960</span>
+<span class="normal">961</span>
+<span class="normal">962</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">step_tcp</span><span class="p">(</span><span class="n">domain</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check TCP connectivity&quot;&quot;&quot;</span>
+    <span class="n">print_subheader</span><span class="p">(</span><span class="s2">&quot;10. TCP Connectivity&quot;</span><span class="p">)</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="n">get_logger</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">sock</span> <span class="o">=</span> <span class="n">socket</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">socket</span><span class="o">.</span><span class="n">SOCK_STREAM</span><span class="p">)</span>
+        <span class="n">sock</span><span class="o">.</span><span class="n">settimeout</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">sock</span><span class="o">.</span><span class="n">connect_ex</span><span class="p">((</span><span class="n">domain</span><span class="p">,</span> <span class="mi">443</span><span class="p">))</span>
+        <span class="n">sock</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">result</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">print_success</span><span class="p">(</span><span class="s2">&quot;TCP Port 443: Open&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;TCP&quot;</span><span class="p">,</span> <span class="s2">&quot;PASS&quot;</span><span class="p">,</span> <span class="s2">&quot;Port 443 open&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">print_fail</span><span class="p">(</span><span class="s2">&quot;TCP Port 443: Closed or filtered&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;TCP&quot;</span><span class="p">,</span> <span class="s2">&quot;FAIL&quot;</span><span class="p">,</span> <span class="s2">&quot;Port 443 closed&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">print_fail</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TCP Check failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">add_html_step</span><span class="p">(</span><span class="s2">&quot;TCP&quot;</span><span class="p">,</span> <span class="s2">&quot;FAIL&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+        <span class="k">return</span> <span class="kc">False</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="cfdiag.network.step_traceroute" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">step_traceroute</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Run traceroute with intelligent timeout detection - unlimited hops unless consecutive timeouts detected</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>cfdiag/network.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 964</span>
+<span class="normal"> 965</span>
+<span class="normal"> 966</span>
+<span class="normal"> 967</span>
+<span class="normal"> 968</span>
+<span class="normal"> 969</span>
+<span class="normal"> 970</span>
+<span class="normal"> 971</span>
+<span class="normal"> 972</span>
+<span class="normal"> 973</span>
+<span class="normal"> 974</span>
+<span class="normal"> 975</span>
+<span class="normal"> 976</span>
+<span class="normal"> 977</span>
+<span class="normal"> 978</span>
+<span class="normal"> 979</span>
+<span class="normal"> 980</span>
+<span class="normal"> 981</span>
+<span class="normal"> 982</span>
+<span class="normal"> 983</span>
+<span class="normal"> 984</span>
+<span class="normal"> 985</span>
+<span class="normal"> 986</span>
+<span class="normal"> 987</span>
+<span class="normal"> 988</span>
+<span class="normal"> 989</span>
+<span class="normal"> 990</span>
+<span class="normal"> 991</span>
+<span class="normal"> 992</span>
+<span class="normal"> 993</span>
+<span class="normal"> 994</span>
+<span class="normal"> 995</span>
+<span class="normal"> 996</span>
+<span class="normal"> 997</span>
+<span class="normal"> 998</span>
+<span class="normal"> 999</span>
+<span class="normal">1000</span>
+<span class="normal">1001</span>
+<span class="normal">1002</span>
+<span class="normal">1003</span>
+<span class="normal">1004</span>
+<span class="normal">1005</span>
+<span class="normal">1006</span>
+<span class="normal">1007</span>
+<span class="normal">1008</span>
+<span class="normal">1009</span>
+<span class="normal">1010</span>
+<span class="normal">1011</span>
+<span class="normal">1012</span>
+<span class="normal">1013</span>
+<span class="normal">1014</span>
+<span class="normal">1015</span>
+<span class="normal">1016</span>
+<span class="normal">1017</span>
+<span class="normal">1018</span>
+<span class="normal">1019</span>
+<span class="normal">1020</span>
+<span class="normal">1021</span>
+<span class="normal">1022</span>
+<span class="normal">1023</span>
+<span class="normal">1024</span>
+<span class="normal">1025</span>
+<span class="normal">1026</span>
+<span class="normal">1027</span>
+<span class="normal">1028</span>
+<span class="normal">1029</span>
+<span class="normal">1030</span>
+<span class="normal">1031</span>
+<span class="normal">1032</span>
+<span class="normal">1033</span>
+<span class="normal">1034</span>
+<span class="normal">1035</span>
+<span class="normal">1036</span>
+<span class="normal">1037</span>
+<span class="normal">1038</span>
+<span class="normal">1039</span>
+<span class="normal">1040</span>
+<span class="normal">1041</span>
+<span class="normal">1042</span>
+<span class="normal">1043</span>
+<span class="normal">1044</span>
+<span class="normal">1045</span>
+<span class="normal">1046</span>
+<span class="normal">1047</span>
+<span class="normal">1048</span>
+<span class="normal">1049</span>
+<span class="normal">1050</span>
+<span class="normal">1051</span>
+<span class="normal">1052</span>
+<span class="normal">1053</span>
+<span class="normal">1054</span>
+<span class="normal">1055</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">step_traceroute</span><span class="p">(</span><span class="n">domain</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Run traceroute with intelligent timeout detection - unlimited hops unless consecutive timeouts detected&quot;&quot;&quot;</span>
+    <span class="n">print_subheader</span><span class="p">(</span><span class="s2">&quot;12. Traceroute&quot;</span><span class="p">)</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="n">get_logger</span><span class="p">()</span>
+    <span class="n">trace_cmd</span> <span class="o">=</span> <span class="s2">&quot;tracert&quot;</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;nt&#39;</span> <span class="k">else</span> <span class="s2">&quot;traceroute&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="n">trace_cmd</span><span class="p">):</span>
+        <span class="n">print_info</span><span class="p">(</span><span class="s2">&quot;Traceroute not available&quot;</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_context</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="n">get_context</span><span class="p">()</span>
+    <span class="c1"># traceroute_limit now means: stop after N consecutive timeout patterns</span>
+    <span class="n">max_consecutive_timeouts</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;traceroute_limit&#39;</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+
+    <span class="c1"># Build traceroute command WITHOUT hop limit (unlimited hops)</span>
+    <span class="c1"># Use a high default hop limit (30) to allow traceroute to run naturally</span>
+    <span class="c1"># The actual stopping will be controlled by consecutive timeout detection</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;nt&#39;</span><span class="p">:</span>
+        <span class="c1"># Windows tracert uses -h for max hops, set to 30 (default is usually 30)</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">trace_cmd</span><span class="si">}</span><span class="s2"> -h 30 </span><span class="si">{</span><span class="n">domain</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="c1"># Windows tracert doesn&#39;t support -4/-6 flags directly</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Linux/Unix traceroute uses -m for max hops, set to 30 (default is usually 30)</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">trace_cmd</span><span class="si">}</span><span class="s2"> -m 30 </span><span class="si">{</span><span class="n">domain</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="c1"># Add IPv4/IPv6 flags if specified (Linux/Unix only)</span>
+        <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ipv4&#39;</span><span class="p">):</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">trace_cmd</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">trace_cmd</span><span class="si">}</span><span class="s2"> -4&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ipv6&#39;</span><span class="p">):</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">trace_cmd</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">trace_cmd</span><span class="si">}</span><span class="s2"> -6&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Run traceroute with real-time monitoring to detect consecutive timeouts</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">process</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">output_lines</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">consecutive_timeouts</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span> <span class="ow">and</span> <span class="n">process</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">break</span>
+
+            <span class="k">if</span> <span class="n">line</span><span class="p">:</span>
+                <span class="n">output_lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+
+                <span class="c1"># Check for timeout patterns: &quot;* * *&quot; or similar timeout indicators</span>
+                <span class="c1"># Common patterns: &quot;* * *&quot;, &quot;*&quot;, &quot;Request timed out&quot;, &quot;timeout&quot;</span>
+                <span class="n">line_stripped</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">is_timeout</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="s2">&quot;* * *&quot;</span> <span class="ow">in</span> <span class="n">line_stripped</span> <span class="ow">or</span>
+                    <span class="p">(</span><span class="n">line_stripped</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s2">&quot;*&quot;</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">)</span> <span class="ow">or</span>  <span class="c1"># Multiple asterisks</span>
+                    <span class="s2">&quot;Request timed out&quot;</span> <span class="ow">in</span> <span class="n">line_stripped</span> <span class="ow">or</span>
+                    <span class="p">(</span><span class="s2">&quot;timeout&quot;</span> <span class="ow">in</span> <span class="n">line_stripped</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">and</span> <span class="s2">&quot;*&quot;</span> <span class="ow">in</span> <span class="n">line_stripped</span><span class="p">)</span>
+                <span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">is_timeout</span><span class="p">:</span>
+                    <span class="n">consecutive_timeouts</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="k">if</span> <span class="n">consecutive_timeouts</span> <span class="o">&gt;=</span> <span class="n">max_consecutive_timeouts</span><span class="p">:</span>
+                        <span class="c1"># Stop early if we see too many consecutive timeouts</span>
+                        <span class="n">process</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">process</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+                        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">TimeoutExpired</span><span class="p">:</span>
+                            <span class="n">process</span><span class="o">.</span><span class="n">kill</span><span class="p">()</span>
+
+                        <span class="k">if</span> <span class="n">l</span><span class="p">:</span>
+                            <span class="n">l</span><span class="o">.</span><span class="n">log_file</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Traceroute stopped early after </span><span class="si">{</span><span class="n">consecutive_timeouts</span><span class="si">}</span><span class="s2"> consecutive timeout patterns (* * *)&quot;</span><span class="p">)</span>
+                            <span class="n">l</span><span class="o">.</span><span class="n">log_file</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Traceroute output:</span><span class="se">\n</span><span class="si">{</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">output_lines</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                            <span class="n">l</span><span class="o">.</span><span class="n">log_file</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[NOTE] Traceroute was terminated early due to </span><span class="si">{</span><span class="n">consecutive_timeouts</span><span class="si">}</span><span class="s2"> consecutive timeout patterns (limit: </span><span class="si">{</span><span class="n">max_consecutive_timeouts</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+                        <span class="k">return</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># Reset counter if we get a valid response</span>
+                    <span class="n">consecutive_timeouts</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1"># Get remaining output if process ended normally</span>
+        <span class="n">remaining</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
+        <span class="k">if</span> <span class="n">remaining</span><span class="p">:</span>
+            <span class="n">output_lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">remaining</span><span class="p">)</span>
+
+        <span class="n">full_output</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">output_lines</span><span class="p">)</span>
+        <span class="n">exit_code</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span>
+            <span class="n">l</span><span class="o">.</span><span class="n">log_file</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Traceroute output:</span><span class="se">\n</span><span class="si">{</span><span class="n">full_output</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">exit_code</span> <span class="ow">and</span> <span class="n">exit_code</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">l</span><span class="o">.</span><span class="n">log_file</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[NOTE] Traceroute exited with code </span><span class="si">{</span><span class="n">exit_code</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span>
+            <span class="n">l</span><span class="o">.</span><span class="n">log_file</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Traceroute failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># Fallback to simple run_command if monitoring fails</span>
+        <span class="n">code</span><span class="p">,</span> <span class="n">output</span> <span class="o">=</span> <span class="n">run_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">log_output_to_file</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">l</span><span class="p">:</span> <span class="n">l</span><span class="o">.</span><span class="n">log_file</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Traceroute output:</span><span class="se">\n</span><span class="si">{</span><span class="n">output</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="reporting">Reporting</h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="cfdiag.reporting"></a>
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.expand", "navigation.sections"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
